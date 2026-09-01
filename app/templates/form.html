@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>출석인정허가원 작성</h1>
+
+<section class="info-card">
+  <dl>
+    <dt>학과</dt><dd>{{ student.department }}</dd>
+    <dt>학년</dt><dd>{{ student.grade }}</dd>
+    <dt>학번</dt><dd>{{ student.student_number }}</dd>
+    <dt>반</dt><dd>{{ student.class_no }}</dd>
+    <dt>성명</dt><dd>{{ student.name }}</dd>
+  </dl>
+</section>
+
+<form method="post" action="{{ url_for('generate', student_id=student.id) }}">
+  <fieldset>
+    <legend>결석 사유</legend>
+    {% for code, label in reasons.items() %}
+    <label class="radio-row">
+      <input type="radio" name="reason_code" value="{{ code }}" {% if loop.first %}required{% endif %}>
+      {{ label }}
+    </label>
+    {% endfor %}
+  </fieldset>
+
+  <fieldset>
+    <legend>결석 기간</legend>
+    <label>시작일 <input type="date" name="period_start" value="{{ today }}" required></label>
+    <label>종료일 <input type="date" name="period_end" value="{{ today }}" required></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>결석 과목 (최대 {{ max_courses }}개)</legend>
+    {% if courses %}
+      {% for c in courses %}
+      <label class="checkbox-row">
+        <input type="checkbox" name="course_ids" value="{{ c.id }}">
+        {{ c.course_name }} — {{ c.professor }} 교수 ({{ c.class_day }} / {{ c.class_time }})
+      </label>
+      {% endfor %}
+    {% else %}
+      <p class="empty">등록된 수강 과목이 없습니다. 관리자에게 문의하세요.</p>
+    {% endif %}
+  </fieldset>
+
+  <button type="submit" class="btn primary">한글(.hwpx) 파일로 다운로드</button>
+</form>
+{% endblock %}
