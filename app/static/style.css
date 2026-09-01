@@ -23,6 +23,7 @@ header {
 }
 
 .brand { font-weight: 700; text-decoration: none; color: var(--text); }
+.nav-link { float: right; color: var(--primary); text-decoration: none; font-size: 0.9rem; }
 
 main {
   max-width: 720px;
@@ -99,3 +100,14 @@ fieldset label input[type=date] {
 .btn.primary { background: var(--primary); color: #fff; padding: 10px 18px; font-weight: 600; }
 
 .empty { color: #888; }
+
+.checkbox-row.disabled { color: #999; }
+.badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fde8e8;
+  color: #b42318;
+  font-size: 0.78rem;
+}
