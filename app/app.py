@@ -69,6 +69,9 @@ def generate(student_id):
     reason_code = int(request.form["reason_code"])
     period_start = datetime.strptime(request.form["period_start"], "%Y-%m-%d").date()
     period_end = datetime.strptime(request.form["period_end"], "%Y-%m-%d").date()
+    if period_end < period_start:
+        conn.close()
+        abort(400, "종료일은 시작일보다 앞선 날짜로 설정할 수 없습니다.")
     course_ids = [int(cid) for cid in request.form.getlist("course_ids")]
 
     available = {c["id"]: c for c in get_student_courses(conn, student)}

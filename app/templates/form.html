@@ -25,8 +25,8 @@
 
   <fieldset>
     <legend>결석 기간</legend>
-    <label>시작일 <input type="date" name="period_start" value="{{ today }}" required></label>
-    <label>종료일 <input type="date" name="period_end" value="{{ today }}" required></label>
+    <label>시작일 <input type="date" id="period_start" name="period_start" value="{{ today }}" required></label>
+    <label>종료일 <input type="date" id="period_end" name="period_end" value="{{ today }}" min="{{ today }}" required></label>
     <p class="hint">* 과목당 이 기간 동안의 수업시간 합이 {{ max_absence_periods + 1 }}시간 이상이면
       해당 과목은 신청할 수 없습니다 (과목당 최대 {{ max_absence_periods }}시간까지).</p>
   </fieldset>
@@ -48,4 +48,23 @@
 
   <button type="submit" class="btn primary">한글(.hwpx) 파일로 다운로드</button>
 </form>
+
+<script>
+  // 종료일은 항상 시작일 이후여야 하므로, 시작일이 바뀔 때마다 종료일이
+  // 고를 수 있는 가장 이른 날짜(min)를 맞춰준다.
+  (function () {
+    var startInput = document.getElementById("period_start");
+    var endInput = document.getElementById("period_end");
+
+    function syncEndMin() {
+      endInput.min = startInput.value;
+      if (endInput.value && endInput.value < startInput.value) {
+        endInput.value = startInput.value;
+      }
+    }
+
+    startInput.addEventListener("change", syncEndMin);
+    syncEndMin();
+  })();
+</script>
 {% endblock %}
