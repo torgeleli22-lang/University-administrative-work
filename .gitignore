@@ -5,3 +5,4 @@ data/raw/
 *.xls
 *.xlsx
 .venv/
+.env

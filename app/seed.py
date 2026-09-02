@@ -25,30 +25,30 @@ def seed():
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("DELETE FROM students WHERE term=?", (TERM,))
+    cur.execute("DELETE FROM students WHERE term=%s", (TERM,))
     for number, name, dept, grade, class_no in STUDENTS:
         cur.execute(
             """INSERT INTO students (term, student_number, name, department, grade, class_no)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (TERM, number, name, dept, grade, class_no),
         )
 
     for grade, section, course_name, professor, slots in COURSES:
         cur.execute(
             """INSERT INTO courses (term, grade, section, course_name, professor)
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(term, grade, section, course_name, professor) DO NOTHING""",
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (term, grade, section, course_name, professor) DO NOTHING""",
             (TERM, grade, section, course_name, professor),
         )
         course_id = cur.execute(
-            """SELECT id FROM courses WHERE term=? AND grade=? AND section=?
-               AND course_name=? AND professor=?""",
+            """SELECT id FROM courses WHERE term=%s AND grade=%s AND section=%s
+               AND course_name=%s AND professor=%s""",
             (TERM, grade, section, course_name, professor),
         ).fetchone()["id"]
         for day, start, end in slots:
             cur.execute(
                 """INSERT INTO course_slots (course_id, day, period_start, period_end)
-                   VALUES (?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s)""",
                 (course_id, day, start, end),
             )
 

@@ -6,15 +6,58 @@
 
 ## 실행 방법 (로컬)
 
+DB는 SQLite가 아니라 **PostgreSQL**을 씁니다 (아래 "무료 DB 연동하기" 참고).
+아직 DB가 없다면 그 섹션을 먼저 보고 `DATABASE_URL`부터 만들어두세요.
+
 ```bash
 pip install -r requirements.txt
-python -m app.seed          # 데모용 소량 샘플 데이터 (실제 데이터는 아래 참고)
+cp .env.example .env         # DATABASE_URL을 본인 Postgres 연결 문자열로 수정
+python -m app.seed           # 데모용 소량 샘플 데이터 (실제 데이터는 아래 참고)
 python -m flask --app app.app run
 ```
 
 브라우저에서 http://127.0.0.1:5000 접속 → 학생 검색/선택 → 결석 사유·기간·과목
 선택 → "한글(.hwpx) 파일로 다운로드" 클릭. 상단의 "사용 기록" 링크에서 지금까지
 생성된 허가원 이력을 확인할 수 있습니다.
+
+## 무료 DB 연동하기 (Neon)
+
+무료 Postgres 중에서는 **[Neon](https://neon.tech)**을 추천합니다.
+
+| | Neon | Supabase | Render 무료 Postgres |
+|---|---|---|---|
+| 용량 | 0.5GB 무료 | 500MB 무료 | 1GB |
+| 비활성 시 | 자동 슬립 후 요청 오면 몇 초 안에 자동 기상 | **7일 미사용 시 프로젝트 전체 일시정지** (대시보드에서 수동으로 다시 켜야 함) | - |
+| 기간 제한 | 없음 | 없음 | **90일 후 DB 자체가 삭제됨** |
+
+이 앱은 학생/교직원이 어쩌다 한 번씩 쓰는 용도라, 며칠씩 요청이 없을 수 있습니다.
+Supabase는 그러다 프로젝트가 통째로 멈춰서 사람이 대시보드에 들어가 깨워야 하고,
+Render 무료 DB는 아예 90일 뒤 삭제되기 때문에 이 용도엔 안 맞습니다. Neon은 접속이
+뜸해도 자동으로 자고 깨어날 뿐 프로젝트가 삭제되거나 수동 개입이 필요하지 않아서
+가장 무난합니다.
+
+### 연동 순서
+
+1. https://neon.tech 에서 무료로 가입합니다 (GitHub 계정으로 바로 가입 가능).
+2. 새 프로젝트를 만들면 데이터베이스 이름(`neondb` 등)과 함께 **Connection string**을
+   보여줍니다. `postgresql://사용자:비밀번호@ep-xxxx.region.aws.neon.tech/디비이름?sslmode=require`
+   형태입니다. 이 문자열을 복사하세요.
+3. 로컬에서 테스트하려면:
+   ```bash
+   cp .env.example .env
+   ```
+   `.env` 파일을 열어 `DATABASE_URL=`에 복사한 연결 문자열을 붙여넣습니다.
+   (`.env`는 `.gitignore`에 있어서 git에 올라가지 않습니다.)
+4. 스키마를 만들고 실제 데이터를 넣습니다:
+   ```bash
+   python -m app.import_real_data --roster ... --timetable 1:... --syllabus ...
+   ```
+   (`import_real_data.py`가 내부에서 `init_db()`를 호출해서 테이블을 자동으로 만듭니다.
+   따로 마이그레이션 도구는 없습니다 — 스키마가 바뀌면 `app/db.py`의 `SCHEMA`를 고치고
+   다시 실행하면 됩니다.)
+5. 나중에 호스팅 서버에 배포할 때도 **같은 `DATABASE_URL` 값**을 그 서비스의 환경변수로
+   등록하면 로컬과 배포 서버가 같은 Neon DB를 보게 됩니다. Render/Railway 등은 보통
+   대시보드에 "Environment Variables" 설정란이 있습니다.
 
 ## 실제 학사 데이터 넣기
 
@@ -48,10 +91,12 @@ python -m app.import_real_data \
 
 ### ⚠️ 개인정보 취급 주의
 
-재학생명단·강의계획서·시간표 원본 파일과, 그 파일로 채워진 `data/attendance.db`는
-**절대 git에 커밋하지 마세요** (`.gitignore`에 이미 제외 처리는 되어 있습니다).
-실제 이름·학번이 들어간 데이터베이스는 배포 서버에만 두고, 로컬에서는 파일을
-받아서 가져오기(import)만 하고 지우는 방식을 권장합니다.
+재학생명단·강의계획서·시간표 원본 파일은 **절대 git에 커밋하지 마세요**
+(`.gitignore`에 이미 제외 처리는 되어 있습니다). 실제 이름·학번이 들어간 DB
+자체는 git에 올라갈 일이 없습니다(로컬 파일이 아니라 Neon 같은 외부 Postgres에
+있으니까요) — 대신 그 DB에 누가 접근할 수 있는지(연결 문자열, Neon 프로젝트
+권한)를 잘 관리하는 게 중요합니다. 로컬에서는 원본 xls 파일을 가져오기(import)만
+하고 다 쓰면 지우는 방식을 권장합니다.
 
 ## 과목당 사용 횟수 제한 + 사용 기록
 
@@ -68,7 +113,8 @@ python -m app.import_real_data \
 Flask 앱을 `gunicorn`으로 띄우도록 `Procfile`을 준비해뒀습니다
 (`web: gunicorn 'app.app:app'`). Render, Railway, Fly.io 같은 곳은 무료 요금제로
 `프로젝트이름.onrender.com` 같은 무료 서브도메인을 바로 내어줍니다 — 이 앱을
-그대로 올리면 도메인 구매 없이도 인터넷에서 접속 가능한 주소가 생깁니다.
+그대로 올리면 도메인 구매 없이도 인터넷에서 접속 가능한 주소가 생깁니다. 배포할 때는
+호스팅 서비스의 환경변수 설정에 위에서 만든 `DATABASE_URL`을 꼭 등록해야 합니다.
 
 다만 "완전 무료" 정식 도메인(.com/.kr 등)은 실질적으로 없다는 점은 미리
 알아두시면 좋습니다. 예전에 흔했던 Freenom(.tk/.ml 등) 무료 도메인은 더 이상
@@ -86,7 +132,7 @@ Flask 앱을 `gunicorn`으로 띄우도록 `Procfile`을 준비해뒀습니다
 ## 구조
 
 - `app/config.py` — 학기(`TERM`), 요일 순서, 과목당 사용 제한 상수
-- `app/db.py` — SQLite 스키마 (students, courses, course_slots, permit_records)
+- `app/db.py` — Postgres 연결(`DATABASE_URL`)과 스키마 (students, courses, course_slots, permit_records)
 - `app/import_real_data.py` — 재학생명단/시간표/강의계획서 .xls → DB 적재
 - `app/seed.py` — 소량 데모 데이터 (실 데이터 없이 빠르게 돌려볼 때)
 - `app/queries.py` — 학생별 수강 과목 + 사용 횟수 조회 헬퍼

@@ -20,13 +20,13 @@ def index():
     conn = get_conn()
     if q:
         rows = conn.execute(
-            """SELECT * FROM students WHERE term=? AND (student_number LIKE ? OR name LIKE ?)
+            """SELECT * FROM students WHERE term=%s AND (student_number LIKE %s OR name LIKE %s)
                ORDER BY grade, class_no, student_number""",
             (TERM, f"%{q}%", f"%{q}%"),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT * FROM students WHERE term=? ORDER BY grade, class_no, student_number",
+            "SELECT * FROM students WHERE term=%s ORDER BY grade, class_no, student_number",
             (TERM,),
         ).fetchall()
     conn.close()
@@ -37,7 +37,7 @@ def index():
 def student_form(student_id):
     conn = get_conn()
     student = conn.execute(
-        "SELECT * FROM students WHERE id=? AND term=?", (student_id, TERM)
+        "SELECT * FROM students WHERE id=%s AND term=%s", (student_id, TERM)
     ).fetchone()
     if student is None:
         conn.close()
@@ -59,7 +59,7 @@ def student_form(student_id):
 def generate(student_id):
     conn = get_conn()
     student = conn.execute(
-        "SELECT * FROM students WHERE id=? AND term=?", (student_id, TERM)
+        "SELECT * FROM students WHERE id=%s AND term=%s", (student_id, TERM)
     ).fetchone()
     if student is None:
         conn.close()
@@ -101,12 +101,13 @@ def generate(student_id):
 
     data = generate_hwpx(str(TEMPLATE_HWPX), req)
 
-    conn.executemany(
-        """INSERT INTO permit_records (term, student_id, course_id, reason_code, period_start, period_end)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        [(TERM, student_id, c["id"], reason_code, period_start.isoformat(), period_end.isoformat())
-         for c in selected],
-    )
+    with conn.cursor() as cur:
+        cur.executemany(
+            """INSERT INTO permit_records (term, student_id, course_id, reason_code, period_start, period_end)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            [(TERM, student_id, c["id"], reason_code, period_start.isoformat(), period_end.isoformat())
+             for c in selected],
+        )
     conn.commit()
     conn.close()
 
@@ -128,7 +129,7 @@ def records():
            FROM permit_records p
            JOIN students s ON s.id = p.student_id
            JOIN courses c ON c.id = p.course_id
-           WHERE p.term = ?
+           WHERE p.term = %s
            ORDER BY p.created_at DESC""",
         (TERM,),
     ).fetchall()

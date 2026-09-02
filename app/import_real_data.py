@@ -240,12 +240,13 @@ def parse_syllabus(path):
 # ---------------------------------------------------------------------------
 
 def load_roster(conn, students, term):
-    conn.execute("DELETE FROM students WHERE term = ?", (term,))
-    conn.executemany(
-        """INSERT INTO students (term, student_number, name, department, grade, class_no)
-           VALUES (:term, :student_number, :name, :department, :grade, :class_no)""",
-        [{**s, "term": term} for s in students],
-    )
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM students WHERE term = %s", (term,))
+        cur.executemany(
+            """INSERT INTO students (term, student_number, name, department, grade, class_no)
+               VALUES (%(term)s, %(student_number)s, %(name)s, %(department)s, %(grade)s, %(class_no)s)""",
+            [{**s, "term": term} for s in students],
+        )
 
 
 def load_timetable(conn, slots, term):
@@ -253,18 +254,18 @@ def load_timetable(conn, slots, term):
     for slot in slots:
         cur.execute(
             """INSERT INTO courses (term, grade, section, course_name, professor)
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(term, grade, section, course_name, professor) DO NOTHING""",
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (term, grade, section, course_name, professor) DO NOTHING""",
             (term, slot["grade"], slot["section"], slot["course_name"], slot["professor"]),
         )
         course_id = cur.execute(
             """SELECT id FROM courses
-               WHERE term=? AND grade=? AND section=? AND course_name=? AND professor=?""",
+               WHERE term=%s AND grade=%s AND section=%s AND course_name=%s AND professor=%s""",
             (term, slot["grade"], slot["section"], slot["course_name"], slot["professor"]),
         ).fetchone()["id"]
         cur.execute(
             """INSERT INTO course_slots (course_id, day, period_start, period_end, building, room)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (course_id, slot["day"], slot["period_start"], slot["period_end"],
              slot["building"], slot["room"]),
         )
@@ -274,9 +275,9 @@ def load_syllabus(conn, rows, term):
     cur = conn.cursor()
     for row in rows:
         cur.execute(
-            """UPDATE courses SET course_code=:course_code, credits=:credits
-               WHERE term=:term AND grade=:grade AND section=:section
-                 AND course_name=:course_name""",
+            """UPDATE courses SET course_code=%(course_code)s, credits=%(credits)s
+               WHERE term=%(term)s AND grade=%(grade)s AND section=%(section)s
+                 AND course_name=%(course_name)s""",
             {**row, "term": term},
         )
         if cur.rowcount == 0:
@@ -285,8 +286,8 @@ def load_syllabus(conn, rows, term):
             # having it selectable, just without day/time info.
             cur.execute(
                 """INSERT INTO courses (term, grade, section, course_name, professor, course_code, credits)
-                   VALUES (:term, :grade, :section, :course_name, :professor, :course_code, :credits)
-                   ON CONFLICT(term, grade, section, course_name, professor) DO NOTHING""",
+                   VALUES (%(term)s, %(grade)s, %(section)s, %(course_name)s, %(professor)s, %(course_code)s, %(credits)s)
+                   ON CONFLICT (term, grade, section, course_name, professor) DO NOTHING""",
                 {**row, "term": term},
             )
 
