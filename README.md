@@ -110,24 +110,60 @@ python -m app.import_real_data \
 
 ## 웹에 배포하기 (무료 도메인/호스팅)
 
-Flask 앱을 `gunicorn`으로 띄우도록 `Procfile`을 준비해뒀습니다
-(`web: gunicorn 'app.app:app'`). Render, Railway, Fly.io 같은 곳은 무료 요금제로
-`프로젝트이름.onrender.com` 같은 무료 서브도메인을 바로 내어줍니다 — 이 앱을
-그대로 올리면 도메인 구매 없이도 인터넷에서 접속 가능한 주소가 생깁니다. 배포할 때는
-호스팅 서비스의 환경변수 설정에 위에서 만든 `DATABASE_URL`을 꼭 등록해야 합니다.
+무료 서버는 **[Render](https://render.com)**를 기준으로 정리합니다 (GitHub 저장소를
+그대로 연결해서 올리는 방식이라 제일 간단합니다). Flask 앱을 `gunicorn`으로 띄우는
+`Procfile`과, Render가 저장소를 인식해서 설정을 거의 자동으로 채워주는
+`render.yaml`을 이미 준비해뒀습니다.
 
-다만 "완전 무료" 정식 도메인(.com/.kr 등)은 실질적으로 없다는 점은 미리
-알아두시면 좋습니다. 예전에 흔했던 Freenom(.tk/.ml 등) 무료 도메인은 더 이상
-신규 발급을 하지 않고, `eu.org`처럼 심사 후 받을 수 있는 무료 도메인도 있지만
-느리고 제한적입니다. 실용적인 선택지는 두 가지입니다.
+계정 생성·결제·배포 버튼 클릭처럼 제가 대신 할 수 없는 부분(계정/자격 증명이
+필요한 부분)과, 코드/설정 파일처럼 제가 미리 준비해둘 수 있는 부분이 나뉩니다.
 
-1. 호스팅사에서 주는 무료 서브도메인 그대로 사용 (완전 무료, 가장 간단)
-2. 짧고 기억하기 쉬운 진짜 도메인이 필요하면 `.com` 기준 1년에 보통
-   1만원 내외로 구매 (Namecheap, 가비아 등)
+### 1단계 — 더미 데이터로 배포부터 확인
 
-호스팅 계정 생성이나 도메인 결제는 제가 대신 할 수 없는 부분이라
-(결제수단/계정 소유권 문제), 계정만 만들어주시면 배포 설정 파일 정리나 연결은
-같이 진행할 수 있습니다.
+**제가 이미 해둔 것**
+- `app/seed.py` (더미 학생 2명 + 과목 2개), `render.yaml`, `Procfile` — 모두 저장소에 커밋됨
+- 로컬 Postgres로 이 더미 데이터 → 웹페이지 → .hwpx 다운로드까지 전 과정 재검증 완료
+
+**사용자가 할 일**
+1. https://render.com 가입 (GitHub 계정으로 로그인하면 저장소 접근 권한도 같이 부여됨)
+2. Render 대시보드에서 **New → Blueprint** 선택 → 이 GitHub 저장소 선택
+   (`render.yaml`을 인식해서 서비스 설정이 자동으로 채워집니다)
+3. 배포 설정 화면에서 `DATABASE_URL` 값에 Neon 연결 문자열을 붙여넣고 배포
+4. 배포가 끝나면 Render가 `https://attendance-permit-xxxx.onrender.com` 같은 무료
+   주소를 줍니다. 아직 DB에 데이터가 없어서 학생 목록은 비어 있을 거예요.
+5. **더미 데이터 넣기**: 본인 컴퓨터(정상적으로 인터넷 되는 환경)에서
+   ```bash
+   git clone <이 저장소 주소>
+   cd University-administrative-work
+   pip install -r requirements.txt
+   cp .env.example .env   # DATABASE_URL을 Neon 연결 문자열로 수정
+   python -m app.seed
+   ```
+   실행하면 Neon DB에 더미 학생 2명이 들어갑니다.
+6. Render가 준 주소로 접속해서 더미 학생이 뜨는지, 허가원 다운로드가 되는지 확인
+
+여기까지 되면 "코드 - Neon DB - 배포 서버 - 웹페이지"가 다 연결된 게 확인된
+겁니다. 문제가 생기면 에러 메시지(Render 로그, 브라우저 화면)를 저에게 알려주세요.
+
+### 2단계 — 실제 데이터로 교체
+
+더미 데이터 확인이 끝나면, 위 5번과 같은 방식으로 `python -m app.seed` 대신
+`python -m app.import_real_data ...` (아래 "실제 학사 데이터 넣기" 참고)를
+같은 `.env`로 실행하면 됩니다. 재학생명단 삭제(`DELETE FROM students WHERE
+term=...`)는 import 스크립트가 알아서 하니, 더미 데이터는 실제 데이터를 넣는
+순간 자동으로 정리됩니다 (단, 더미로 만든 `courses`/`course_slots`는 남으니
+신경 쓰이면 Neon 콘솔의 SQL Editor에서 `DELETE FROM courses WHERE term='2026-2'
+AND professor IN ('김철수','이영수');` 처럼 지워도 됩니다).
+
+### 도메인
+
+무료 서브도메인(`*.onrender.com`)은 1단계에서 이미 확보됩니다. "완전 무료" 정식
+도메인(.com/.kr 등)은 실질적으로 없다는 점은 미리 알아두시면 좋습니다 — 예전에
+흔했던 Freenom(.tk/.ml) 무료 도메인은 더 이상 신규 발급이 안 되고, `eu.org`
+같은 심사형 무료 도메인은 느리고 제한적입니다. 짧고 기억하기 쉬운 도메인이
+꼭 필요하면 `.com` 기준 1년에 보통 1만원 내외로 구매(Namecheap, 가비아 등)하는
+정도가 현실적인 선택지입니다. 도메인 결제는 제가 대신 할 수 없으니, 구매하시면
+Render에 연결하는 것부터 같이 진행하겠습니다.
 
 ## 구조
 
@@ -141,6 +177,7 @@ Flask 앱을 `gunicorn`으로 띄우도록 `Procfile`을 준비해뒀습니다
 - `app/templates/`, `app/static/` — 화면
 - `app/assets/attendance_permit_template.hwpx` — 학교 원본 서식 (수정 금지)
 - `docs/hwpx-field-map.md` — hwpx 표 좌표와 필드 매핑 문서 (서식이 바뀌면 참고)
+- `Procfile`, `render.yaml` — Render 배포 설정
 
 ## 알아둘 점 / 남은 일
 
