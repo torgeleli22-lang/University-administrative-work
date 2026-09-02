@@ -63,9 +63,9 @@ def _cell_str(value):
 # 재학생명단 (roster)
 # ---------------------------------------------------------------------------
 
-def parse_roster(path):
+def parse_roster(file_bytes):
     """Yields dicts: student_number, name, department, grade, class_no."""
-    book = xlrd.open_workbook(path)
+    book = xlrd.open_workbook(file_contents=file_bytes)
     sh = book.sheet_by_index(0)
 
     students = []
@@ -122,11 +122,11 @@ def _parse_cell_line(line):
     }
 
 
-def parse_timetable(path, grade):
+def parse_timetable(file_bytes, grade):
     """Yields dicts: grade, section, course_name, professor, day,
     period_start, period_end, building, room -- one row per class meeting
     (already consolidated across consecutive periods)."""
-    book = xlrd.open_workbook(path)
+    book = xlrd.open_workbook(file_contents=file_bytes)
     sh = book.sheet_by_index(0)
 
     header_row = None
@@ -135,7 +135,7 @@ def parse_timetable(path, grade):
             header_row = r
             break
     if header_row is None:
-        raise ValueError(f"{path}: could not find the '교시' header row")
+        raise ValueError(f"{grade}학년 시간표: could not find the '교시' header row")
 
     day_cols = {}
     for c in range(sh.ncols):
@@ -200,9 +200,9 @@ def parse_timetable(path, grade):
 # 강의계획서 입력 현황 (syllabus index) -- optional enrichment
 # ---------------------------------------------------------------------------
 
-def parse_syllabus(path):
+def parse_syllabus(file_bytes):
     """Yields dicts: course_code, course_name, grade, section, credits, professor."""
-    book = xlrd.open_workbook(path)
+    book = xlrd.open_workbook(file_contents=file_bytes)
     sh = book.sheet_by_index(0)
 
     rows = []
@@ -304,21 +304,24 @@ def main():
     init_db()
     conn = get_conn()
 
-    students = parse_roster(args.roster)
+    with open(args.roster, "rb") as f:
+        students = parse_roster(f.read())
     load_roster(conn, students, args.term)
     print(f"학생 {len(students)}명 적재 완료")
 
     total_slots = 0
     for spec in args.timetable:
         grade, path = spec.split(":", 1)
-        slots = parse_timetable(path, grade)
+        with open(path, "rb") as f:
+            slots = parse_timetable(f.read(), grade)
         load_timetable(conn, slots, args.term)
         total_slots += len(slots)
         print(f"{grade}학년 시간표: 수업 {len(slots)}건 적재 완료 ({path})")
     print(f"총 수업 슬롯 {total_slots}건")
 
     if args.syllabus:
-        rows = parse_syllabus(args.syllabus)
+        with open(args.syllabus, "rb") as f:
+            rows = parse_syllabus(f.read())
         load_syllabus(conn, rows, args.term)
         print(f"강의계획서 {len(rows)}건으로 학점/코드 보강 완료")
 

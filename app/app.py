@@ -1,3 +1,4 @@
+import os
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
@@ -7,11 +8,25 @@ from flask import Flask, abort, render_template, request, send_file
 from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, MAX_USES_PER_COURSE, TERM
 from app.db import get_conn, init_db
 from app.hwpx_filler import MAX_COURSES, REASON_LABELS, PermitRequest, generate_hwpx
+from app.import_real_data import (
+    load_roster, load_syllabus, load_timetable,
+    parse_roster, parse_syllabus, parse_timetable,
+)
 from app.queries import count_absence_periods, describe_slots, get_course_slots, get_student_courses
+from app.seed import seed as seed_dummy_data
 
 TEMPLATE_HWPX = Path(__file__).resolve().parent / "assets" / "attendance_permit_template.hwpx"
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # xls uploads are small; 20MB is a generous cap
+
+# Runs on every import, not just `python app.py` -- gunicorn (used in
+# production, see Procfile) imports this module and never executes the
+# __main__ block below, so this is the only place guaranteed to run before
+# the first request. CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS
+# are cheap and safe to repeat, so this also self-heals a DB that's behind
+# on schema changes (see app/db.py's MIGRATIONS).
+init_db()
 
 
 @app.route("/")
@@ -201,6 +216,81 @@ def generate(student_id):
     )
 
 
+def _check_admin_token():
+    expected = os.environ.get("ADMIN_TOKEN")
+    if not expected:
+        abort(500, "서버에 ADMIN_TOKEN 환경변수가 설정되어 있지 않습니다. "
+                    "Render 서비스의 Environment 설정에 ADMIN_TOKEN을 추가해 주세요.")
+    if request.form.get("admin_token") != expected:
+        abort(403, "관리자 토큰이 올바르지 않습니다.")
+
+
+@app.route("/admin/import", methods=["GET"])
+def admin_import_form():
+    return render_template("admin_import.html", term=TERM, result=None)
+
+
+@app.route("/admin/import", methods=["POST"])
+def admin_import():
+    """Web version of `python -m app.import_real_data`: upload the school's
+    .xls exports straight from the browser and load them into Neon, no
+    local Python needed. Files are read into memory and never written to
+    disk."""
+    _check_admin_token()
+    term = request.form.get("term") or TERM
+
+    conn = get_conn()
+    log = []
+    try:
+        roster_file = request.files.get("roster")
+        if roster_file and roster_file.filename:
+            students = parse_roster(roster_file.read())
+            load_roster(conn, students, term)
+            log.append(f"학생 {len(students)}명 적재 완료")
+
+        total_slots = 0
+        for grade in ["1", "2", "3", "4"]:
+            f = request.files.get(f"timetable_{grade}")
+            if f and f.filename:
+                slots = parse_timetable(f.read(), grade)
+                load_timetable(conn, slots, term)
+                total_slots += len(slots)
+                log.append(f"{grade}학년 시간표: 수업 {len(slots)}건 적재 완료")
+        if total_slots:
+            log.append(f"총 수업 슬롯 {total_slots}건")
+
+        syllabus_file = request.files.get("syllabus")
+        if syllabus_file and syllabus_file.filename:
+            rows = parse_syllabus(syllabus_file.read())
+            load_syllabus(conn, rows, term)
+            log.append(f"강의계획서 {len(rows)}건으로 학점/코드 보강 완료")
+
+        if not log:
+            log.append("업로드된 파일이 없습니다. 최소 하나는 선택해 주세요.")
+        else:
+            conn.commit()
+    except Exception as e:
+        conn.rollback()
+        log = [f"오류 발생: {e}"]
+    finally:
+        conn.close()
+
+    return render_template("admin_import.html", term=term, result=log)
+
+
+@app.route("/admin/seed", methods=["POST"])
+def admin_seed():
+    """No-file version of /admin/import: loads the small built-in demo
+    dataset (app/seed.py) so the whole GitHub->Neon->Render chain can be
+    verified from the browser alone, before any real .xls is involved."""
+    _check_admin_token()
+    seed_dummy_data()
+    return render_template(
+        "admin_import.html", term=TERM,
+        result=["데모(더미) 데이터 적재 완료 — 학생 2명, 과목 2개"],
+    )
+
+
 @app.route("/records")
 def records():
     conn = get_conn()
@@ -220,5 +310,4 @@ def records():
 
 
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True, host="0.0.0.0", port=5000)

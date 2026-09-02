@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>학사 데이터 가져오기 (관리자)</h1>
+<p class="hint">학교에서 받은 .xls 파일을 그대로 선택해서 올리면 됩니다. 컴퓨터에
+설치할 건 없고, 파일은 서버에 저장되지 않고 바로 DB에만 반영됩니다.</p>
+
+{% if result %}
+<fieldset>
+  <legend>처리 결과</legend>
+  {% for line in result %}
+  <p class="hint">{{ line }}</p>
+  {% endfor %}
+</fieldset>
+{% endif %}
+
+<form method="post" action="{{ url_for('admin_import') }}" enctype="multipart/form-data">
+  <fieldset>
+    <legend>관리자 인증</legend>
+    <label>관리자 토큰 <input type="password" name="admin_token" required></label>
+    <label>학기 <input type="text" name="term" value="{{ term }}" required></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>재학생명단 (전체 학년, 1개)</legend>
+    <input type="file" name="roster" accept=".xls">
+  </fieldset>
+
+  <fieldset>
+    <legend>학과별 전체시간표 (학년별로 각각)</legend>
+    <label>1학년 <input type="file" name="timetable_1" accept=".xls"></label><br>
+    <label>2학년 <input type="file" name="timetable_2" accept=".xls"></label><br>
+    <label>3학년 <input type="file" name="timetable_3" accept=".xls"></label><br>
+    <label>4학년 <input type="file" name="timetable_4" accept=".xls"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>강의계획서 입력 현황 (선택)</legend>
+    <input type="file" name="syllabus" accept=".xls">
+  </fieldset>
+
+  <p class="hint">필요한 파일만 골라서 올리면 됩니다 (예: 시간표만 새로 나왔으면
+  시간표만 선택). 재학생명단을 올리면 같은 학기의 기존 학생 목록은 새 명단으로
+  통째로 교체됩니다.</p>
+
+  <button type="submit" class="btn primary">업로드 및 반영</button>
+</form>
+
+<fieldset>
+  <legend>또는: 데모(더미) 데이터로 먼저 테스트</legend>
+  <p class="hint">실제 파일 없이 학생 2명 + 과목 2개짜리 테스트 데이터를 넣어봅니다.
+    배포가 제대로 연결됐는지 먼저 확인할 때 씁니다.</p>
+  <form method="post" action="{{ url_for('admin_seed') }}">
+    <label>관리자 토큰 <input type="password" name="admin_token" required></label>
+    <button type="submit" class="btn">데모 데이터 넣기</button>
+  </form>
+</fieldset>
+{% endblock %}
