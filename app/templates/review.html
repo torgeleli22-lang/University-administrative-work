@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>결석 교시 선택</h1>
+
+<section class="info-card">
+  <dl>
+    <dt>성명</dt><dd>{{ student.name }}</dd>
+    <dt>결석 사유</dt><dd>{{ reason_label }}</dd>
+    <dt>결석 기간</dt><dd>{{ period_start }} ~ {{ period_end }}</dd>
+  </dl>
+</section>
+
+{% if blocked %}
+<fieldset>
+  <legend>제외된 과목</legend>
+  {% for msg in blocked %}
+  <p class="hint">⚠ {{ msg }}</p>
+  {% endfor %}
+</fieldset>
+{% endif %}
+
+{% if reviewable %}
+<form method="post" action="{{ url_for('generate', student_id=student.id) }}">
+  <input type="hidden" name="reason_code" value="{{ reason_code }}">
+  <input type="hidden" name="period_start" value="{{ period_start }}">
+  <input type="hidden" name="period_end" value="{{ period_end }}">
+
+  {% for c in reviewable %}
+  <fieldset>
+    <legend>{{ c.course_name }} — {{ c.professor }} 교수</legend>
+    <input type="hidden" name="course_ids" value="{{ c.id }}">
+    <p class="hint">수업 시간: {{ c.slot_lines | join(', ') }}</p>
+    <label>결석 교시 수
+      <select name="periods_{{ c.id }}">
+        {% for n in c.period_options %}
+        <option value="{{ n }}" {% if n == c.max_periods %}selected{% endif %}>{{ n }}시간(교시)</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="hint">선택하신 결석 기간 동안 이 과목은 최대 {{ c.max_periods }}시간까지 인정됩니다.</p>
+  </fieldset>
+  {% endfor %}
+
+  <button type="submit" class="btn primary">한글(.hwpx) 파일로 다운로드</button>
+</form>
+{% else %}
+<p class="empty">신청 가능한 과목이 없습니다. 결석 기간이나 과목 선택을 다시 확인해 주세요.</p>
+<a class="btn" href="{{ url_for('student_form', student_id=student.id) }}">처음으로</a>
+{% endif %}
+{% endblock %}

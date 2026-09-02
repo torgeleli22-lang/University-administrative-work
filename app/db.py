@@ -63,6 +63,7 @@ SCHEMA = [
         reason_code INTEGER NOT NULL,
         period_start TEXT NOT NULL,
         period_end TEXT NOT NULL,
+        periods_missed INTEGER NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
     """,

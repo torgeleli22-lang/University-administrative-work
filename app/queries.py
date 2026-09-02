@@ -17,15 +17,35 @@ def format_schedule(slots):
     return days, times
 
 
+def get_course_slots(conn, course_id):
+    """This course's weekly meeting slots, sorted 월->일, earliest period
+    first -- used to show "몇 교시부터 몇 교시인지" on the review step."""
+    slots = conn.execute(
+        "SELECT day, period_start, period_end FROM course_slots WHERE course_id=%s",
+        (course_id,),
+    ).fetchall()
+    return sorted(slots, key=lambda s: (WEEKDAY_ORDER.index(s["day"]), s["period_start"]))
+
+
+def describe_slots(slots):
+    """['월요일 1~3교시 (3시간)', ...] for display next to the 결석 교시 선택."""
+    lines = []
+    for s in slots:
+        span = s["period_end"] - s["period_start"] + 1
+        period_text = (
+            f"{s['period_start']}~{s['period_end']}교시"
+            if s["period_start"] != s["period_end"] else f"{s['period_start']}교시"
+        )
+        lines.append(f"{s['day']}요일 {period_text} ({span}시간)")
+    return lines
+
+
 def count_absence_periods(conn, course_id, period_start, period_end):
     """Total 교시(periods) this course meets between period_start and
     period_end (both inclusive calendar dates), summed over every day in
     the range that lands on one of the course's weekly meeting days.
     A course on periods 1~3 counts as 3 for each such day."""
-    slots = conn.execute(
-        "SELECT day, period_start, period_end FROM course_slots WHERE course_id=%s",
-        (course_id,),
-    ).fetchall()
+    slots = get_course_slots(conn, course_id)
     if not slots:
         return 0
 
