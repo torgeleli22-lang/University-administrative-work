@@ -1,0 +1,115 @@
+:root {
+  color-scheme: light;
+  --bg: #f7f7f8;
+  --card: #ffffff;
+  --border: #ddd;
+  --primary: #2f5fdb;
+  --text: #1c1c1e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Malgun Gothic", "맑은 고딕", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 24px;
+}
+
+.brand { font-weight: 700; text-decoration: none; color: var(--text); }
+.nav-link { float: right; color: var(--primary); text-decoration: none; font-size: 0.9rem; }
+
+main {
+  max-width: 720px;
+  margin: 32px auto;
+  padding: 0 16px;
+}
+
+h1 { font-size: 1.3rem; }
+
+.search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+.search-bar input { flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+
+table.student-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.student-table th, .student-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 0.92rem;
+}
+.student-table tr:last-child td { border-bottom: none; }
+
+.info-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.info-card dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; }
+.info-card dt { color: #666; }
+.info-card dd { margin: 0; font-weight: 600; }
+
+fieldset {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+legend { font-weight: 700; padding: 0 6px; }
+
+.radio-row, .checkbox-row {
+  display: block;
+  padding: 6px 0;
+  font-size: 0.94rem;
+}
+
+fieldset label input[type=date] {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-left: 6px;
+  margin-right: 18px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 8px 14px;
+  border-radius: 6px;
+  text-decoration: none;
+  background: #eee;
+  color: var(--text);
+  border: none;
+  cursor: pointer;
+  font-size: 0.92rem;
+}
+.btn.primary { background: var(--primary); color: #fff; padding: 10px 18px; font-weight: 600; }
+
+.empty { color: #888; }
+
+.hint { color: #666; font-size: 0.85rem; margin: 8px 0 0; }
+
+.checkbox-row.disabled { color: #999; }
+.badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fde8e8;
+  color: #b42318;
+  font-size: 0.78rem;
+}

@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: attendance-permit
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn 'app.app:app'"
+    envVars:
+      - key: DATABASE_URL
+        sync: false

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+data/attendance.db
+data/raw/
+*.xls
+*.xlsx
+.venv/
+.env

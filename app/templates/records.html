@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>출석인정허가원 사용 기록 ({{ term }})</h1>
+{% if records %}
+<table class="student-table">
+  <thead>
+    <tr>
+      <th>생성일시</th>
+      <th>학번</th>
+      <th>성명</th>
+      <th>학년/반</th>
+      <th>과목</th>
+      <th>담당교수</th>
+      <th>결석 사유</th>
+      <th>결석 기간</th>
+      <th>결석 교시</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in records %}
+    <tr>
+      <td>{{ r.created_at }}</td>
+      <td>{{ r.student_number }}</td>
+      <td>{{ r.name }}</td>
+      <td>{{ r.grade }}/{{ r.class_no }}</td>
+      <td>{{ r.course_name }}</td>
+      <td>{{ r.professor }}</td>
+      <td>{{ reasons[r.reason_code] }}</td>
+      <td>{{ r.period_start }} ~ {{ r.period_end }}</td>
+      <td>{{ r.periods_missed }}시간</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">아직 생성된 기록이 없습니다.</p>
+{% endif %}
+{% endblock %}
