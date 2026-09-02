@@ -1,4 +1,6 @@
 """Read helpers shared by the Flask routes."""
+from datetime import timedelta
+
 from app.config import MAX_USES_PER_COURSE, TERM, WEEKDAY_ORDER
 
 
@@ -13,6 +15,30 @@ def format_schedule(slots):
         for s in slots
     )
     return days, times
+
+
+def count_absence_periods(conn, course_id, period_start, period_end):
+    """Total 교시(periods) this course meets between period_start and
+    period_end (both inclusive calendar dates), summed over every day in
+    the range that lands on one of the course's weekly meeting days.
+    A course on periods 1~3 counts as 3 for each such day."""
+    slots = conn.execute(
+        "SELECT day, period_start, period_end FROM course_slots WHERE course_id=%s",
+        (course_id,),
+    ).fetchall()
+    if not slots:
+        return 0
+
+    periods_by_day = {}
+    for s in slots:
+        periods_by_day[s["day"]] = periods_by_day.get(s["day"], 0) + (s["period_end"] - s["period_start"] + 1)
+
+    total = 0
+    day = period_start
+    while day <= period_end:
+        total += periods_by_day.get(WEEKDAY_ORDER[day.weekday()], 0)
+        day += timedelta(days=1)
+    return total
 
 
 def get_student_courses(conn, student, term=TERM):

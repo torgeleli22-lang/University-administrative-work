@@ -27,6 +27,8 @@
     <legend>결석 기간</legend>
     <label>시작일 <input type="date" name="period_start" value="{{ today }}" required></label>
     <label>종료일 <input type="date" name="period_end" value="{{ today }}" required></label>
+    <p class="hint">* 과목당 이 기간 동안의 수업시간 합이 {{ max_absence_periods + 1 }}시간 이상이면
+      해당 과목은 신청할 수 없습니다 (과목당 최대 {{ max_absence_periods }}시간까지).</p>
   </fieldset>
 
   <fieldset>

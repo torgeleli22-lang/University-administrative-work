@@ -4,10 +4,10 @@ from pathlib import Path
 
 from flask import Flask, abort, render_template, request, send_file
 
-from app.config import MAX_USES_PER_COURSE, TERM
+from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, MAX_USES_PER_COURSE, TERM
 from app.db import get_conn, init_db
 from app.hwpx_filler import MAX_COURSES, REASON_LABELS, PermitRequest, generate_hwpx
-from app.queries import get_student_courses
+from app.queries import count_absence_periods, get_student_courses
 
 TEMPLATE_HWPX = Path(__file__).resolve().parent / "assets" / "attendance_permit_template.hwpx"
 
@@ -51,6 +51,7 @@ def student_form(student_id):
         reasons=REASON_LABELS,
         max_courses=MAX_COURSES,
         max_uses=MAX_USES_PER_COURSE,
+        max_absence_periods=MAX_ABSENCE_PERIODS_PER_COURSE,
         today=date.today().isoformat(),
     )
 
@@ -81,6 +82,12 @@ def generate(student_id):
             conn.close()
             abort(400, f"'{course['course_name']}' 과목은 이번 학기 출석인정허가원을 이미 "
                         f"{course['used_count']}회 사용해 더 이상 신청할 수 없습니다.")
+        periods = count_absence_periods(conn, cid, period_start, period_end)
+        if periods > MAX_ABSENCE_PERIODS_PER_COURSE:
+            conn.close()
+            abort(400, f"'{course['course_name']}' 과목은 선택한 결석 기간 동안 수업이 "
+                        f"총 {periods}시간이라 신청할 수 없습니다 (과목당 최대 "
+                        f"{MAX_ABSENCE_PERIODS_PER_COURSE}시간까지만 가능합니다).")
         selected.append(course)
 
     if len(selected) > MAX_COURSES:

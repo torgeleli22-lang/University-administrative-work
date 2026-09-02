@@ -101,6 +101,8 @@ fieldset label input[type=date] {
 
 .empty { color: #888; }
 
+.hint { color: #666; font-size: 0.85rem; margin: 8px 0 0; }
+
 .checkbox-row.disabled { color: #999; }
 .badge {
   display: inline-block;
