@@ -2,36 +2,43 @@
 {% block content %}
 <h1>출석인정허가원 사용 기록 ({{ term }})</h1>
 {% if records %}
-<table class="student-table">
-  <thead>
-    <tr>
-      <th>생성일시</th>
-      <th>학번</th>
-      <th>성명</th>
-      <th>학년/반</th>
-      <th>과목</th>
-      <th>담당교수</th>
-      <th>결석 사유</th>
-      <th>결석 기간</th>
-      <th>결석 교시</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for r in records %}
-    <tr>
-      <td>{{ r.created_at }}</td>
-      <td>{{ r.student_number }}</td>
-      <td>{{ r.name }}</td>
-      <td>{{ r.grade }}/{{ r.class_no }}</td>
-      <td>{{ r.course_name }}</td>
-      <td>{{ r.professor }}</td>
-      <td>{{ reasons[r.reason_code] }}</td>
-      <td>{{ r.period_start }} ~ {{ r.period_end }}</td>
-      <td>{{ r.periods_missed }}시간</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<form method="post" action="{{ url_for('records_delete') }}">
+  <label>관리자 토큰 (삭제할 때만 필요) <input type="password" name="admin_token"></label>
+  <div style="overflow-x:auto">
+  <table class="student-table">
+    <thead>
+      <tr>
+        <th>생성일시</th>
+        <th>학번</th>
+        <th>성명</th>
+        <th>학년/반</th>
+        <th>과목</th>
+        <th>담당교수</th>
+        <th>결석 사유</th>
+        <th>수업일</th>
+        <th>수업시간</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in records %}
+      <tr>
+        <td>{{ r.created_at }}</td>
+        <td>{{ r.student_number }}</td>
+        <td>{{ r.name }}</td>
+        <td>{{ r.grade }}/{{ r.class_no }}</td>
+        <td>{{ r.course_name }}</td>
+        <td>{{ r.professor }}</td>
+        <td>{{ reasons[r.reason_code] }}</td>
+        <td>{{ r.class_date }}</td>
+        <td>{% if r.class_period_start == r.class_period_end %}{{ r.class_period_start }}교시{% else %}{{ r.class_period_start }}~{{ r.class_period_end }}교시{% endif %} ({{ r.periods_missed }}시간)</td>
+        <td><button type="submit" name="delete_id" value="{{ r.id }}" class="btn">삭제</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</form>
 {% else %}
 <p class="empty">아직 생성된 기록이 없습니다.</p>
 {% endif %}

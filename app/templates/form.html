@@ -33,13 +33,17 @@
   </fieldset>
 
   <fieldset>
-    <legend>결석 과목 (최대 {{ max_courses }}개, 과목당 학기 중 최대 {{ max_uses }}회까지만 사용 가능)</legend>
+    <legend>결석 과목 (최대 {{ max_courses }}개, 과목당 누적 최대 {{ max_absence_periods }}시간까지)</legend>
     {% if courses %}
       {% for c in courses %}
       <label class="checkbox-row {{ 'disabled' if c.at_limit }}">
         <input type="checkbox" name="course_ids" value="{{ c.id }}" {% if c.at_limit %}disabled{% endif %}>
         {{ c.course_name }} — {{ c.professor }} 교수 ({{ c.class_day }} / {{ c.class_time }})
-        {% if c.at_limit %}<span class="badge">이미 {{ c.used_count }}회 사용 — 신청 불가</span>{% endif %}
+        {% if c.at_limit %}
+          <span class="badge">누적 {{ c.used_hours }}시간 — 신청 불가</span>
+        {% elif c.used_hours > 0 %}
+          <span class="hint">(누적 {{ c.used_hours }}시간 사용, {{ c.remaining_hours }}시간 남음)</span>
+        {% endif %}
       </label>
       {% endfor %}
     {% else %}

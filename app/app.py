@@ -3,16 +3,13 @@ from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
 
-from flask import Flask, abort, render_template, request, send_file
+from flask import Flask, abort, redirect, render_template, request, send_file, url_for
 
-from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, MAX_USES_PER_COURSE, TERM
+from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, PERIOD_CHOICES, TERM
 from app.db import get_conn, init_db
 from app.hwpx_filler import MAX_COURSES, REASON_LABELS, PermitRequest, generate_hwpx
-from app.import_real_data import (
-    load_roster, load_syllabus, load_timetable,
-    parse_roster, parse_syllabus, parse_timetable,
-)
-from app.queries import count_absence_periods, describe_slots, get_course_slots, get_student_courses
+from app.import_real_data import load_roster, load_timetable, parse_roster, parse_timetable
+from app.queries import get_course_used_hours, get_student_courses, get_valid_class_dates
 from app.seed import seed as seed_dummy_data
 
 TEMPLATE_HWPX = Path(__file__).resolve().parent / "assets" / "attendance_permit_template.hwpx"
@@ -32,20 +29,16 @@ init_db()
 @app.route("/")
 def index():
     q = request.args.get("q", "").strip()
-    conn = get_conn()
+    students = []
     if q:
-        rows = conn.execute(
+        conn = get_conn()
+        students = conn.execute(
             """SELECT * FROM students WHERE term=%s AND (student_number LIKE %s OR name LIKE %s)
                ORDER BY grade, class_no, student_number""",
             (TERM, f"%{q}%", f"%{q}%"),
         ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM students WHERE term=%s ORDER BY grade, class_no, student_number",
-            (TERM,),
-        ).fetchall()
-    conn.close()
-    return render_template("index.html", students=rows, q=q, term=TERM)
+        conn.close()
+    return render_template("index.html", students=students, q=q, term=TERM)
 
 
 @app.route("/student/<int:student_id>")
@@ -65,15 +58,16 @@ def student_form(student_id):
         courses=courses,
         reasons=REASON_LABELS,
         max_courses=MAX_COURSES,
-        max_uses=MAX_USES_PER_COURSE,
         max_absence_periods=MAX_ABSENCE_PERIODS_PER_COURSE,
         today=date.today().isoformat(),
     )
 
 
 def _parse_period(form):
-    period_start = datetime.strptime(form["period_start"], "%Y-%m-%d").date()
-    period_end = datetime.strptime(form["period_end"], "%Y-%m-%d").date()
+    start_raw = form.get("period_start", "").strip()
+    end_raw = form.get("period_end", "").strip()
+    period_start = datetime.strptime(start_raw, "%Y-%m-%d").date() if start_raw else date.today()
+    period_end = datetime.strptime(end_raw, "%Y-%m-%d").date() if end_raw else date.today()
     if period_end < period_start:
         abort(400, "종료일은 시작일보다 앞선 날짜로 설정할 수 없습니다.")
     return period_start, period_end
@@ -81,10 +75,12 @@ def _parse_period(form):
 
 @app.route("/student/<int:student_id>/review", methods=["POST"])
 def review(student_id):
-    """Second step: for each selected course, show which 교시 it meets and
-    let the office pick exactly how many of those periods were missed
-    (capped by both the course's actual schedule in this date range and
-    the 과목당 최대 결석 시간 rule) before generating anything."""
+    """Second step: for each selected course, offer a 수업일(date) picker
+    limited to dates in the chosen 결석 기간 that the course actually meets
+    on (default: the earliest such date, i.e. closest to 결석 시작일), plus
+    editable 시작/끝 교시 select boxes defaulting to that date's normal
+    slot. Cumulative hours already on file for the course are shown so the
+    12시간 cap is visible before submitting."""
     conn = get_conn()
     student = conn.execute(
         "SELECT * FROM students WHERE id=%s AND term=%s", (student_id, TERM)
@@ -110,19 +106,22 @@ def review(student_id):
             conn.close()
             abort(400, "선택한 과목을 찾을 수 없습니다.")
         if course["at_limit"]:
-            blocked.append(f"{course['course_name']} — 이미 이번 학기에 "
-                            f"{course['used_count']}회 사용해 신청할 수 없습니다.")
+            blocked.append(f"{course['course_name']} — 이번 학기 누적 {course['used_hours']}시간으로 "
+                            f"이미 한도({MAX_ABSENCE_PERIODS_PER_COURSE}시간)에 도달해 신청할 수 없습니다.")
             continue
-        max_periods = min(count_absence_periods(conn, cid, period_start, period_end),
-                           MAX_ABSENCE_PERIODS_PER_COURSE)
-        if max_periods == 0:
+        valid_dates = get_valid_class_dates(conn, cid, period_start, period_end)
+        if not valid_dates:
             blocked.append(f"{course['course_name']} — 선택하신 기간에는 이 수업이 없습니다.")
             continue
         reviewable.append({
             **course,
-            "slot_lines": describe_slots(get_course_slots(conn, cid)),
-            "max_periods": max_periods,
-            "period_options": list(range(1, max_periods + 1)),
+            "valid_dates": [
+                {"iso": d["date"].isoformat(),
+                 "label": f"{d['date'].month}/{d['date'].day} ({'월화수목금토일'[d['date'].weekday()]})",
+                 "period_start": d["period_start"], "period_end": d["period_end"]}
+                for d in valid_dates
+            ],
+            "period_choices": PERIOD_CHOICES,
         })
     conn.close()
 
@@ -135,6 +134,7 @@ def review(student_id):
         period_end=period_end.isoformat(),
         reviewable=reviewable,
         blocked=blocked,
+        max_absence_periods=MAX_ABSENCE_PERIODS_PER_COURSE,
     )
 
 
@@ -163,24 +163,48 @@ def generate(student_id):
         if course is None:
             conn.close()
             abort(400, "선택한 과목을 찾을 수 없습니다.")
-        if course["at_limit"]:
-            conn.close()
-            abort(400, f"'{course['course_name']}' 과목은 이번 학기 출석인정허가원을 이미 "
-                        f"{course['used_count']}회 사용해 더 이상 신청할 수 없습니다.")
-        # Re-derive the cap server-side rather than trusting the review
-        # page's hidden <select> options.
-        max_periods = min(count_absence_periods(conn, cid, period_start, period_end),
-                           MAX_ABSENCE_PERIODS_PER_COURSE)
+
+        class_date_raw = request.form.get(f"class_date_{cid}", "")
         try:
-            periods_missed = int(request.form.get(f"periods_{cid}", ""))
+            class_date = datetime.strptime(class_date_raw, "%Y-%m-%d").date()
         except ValueError:
             conn.close()
-            abort(400, f"'{course['course_name']}' 과목의 결석 교시 수를 선택해 주세요.")
-        if not (1 <= periods_missed <= max_periods):
+            abort(400, f"'{course['course_name']}' 과목의 수업일을 선택해 주세요.")
+
+        valid_dates = {d["date"] for d in get_valid_class_dates(conn, cid, period_start, period_end)}
+        if class_date not in valid_dates:
             conn.close()
-            abort(400, f"'{course['course_name']}' 과목의 결석 교시 수는 1~{max_periods}시간 "
-                        f"사이여야 합니다.")
-        selected.append({**course, "periods_missed": periods_missed})
+            abort(400, f"'{course['course_name']}' 과목은 {class_date.month}/{class_date.day}에 "
+                        f"수업이 없습니다.")
+
+        try:
+            class_period_start = int(request.form.get(f"class_period_start_{cid}", ""))
+            class_period_end = int(request.form.get(f"class_period_end_{cid}", ""))
+        except ValueError:
+            conn.close()
+            abort(400, f"'{course['course_name']}' 과목의 수업 시간(교시)을 선택해 주세요.")
+        if not (1 <= class_period_start <= class_period_end <= max(PERIOD_CHOICES)):
+            conn.close()
+            abort(400, f"'{course['course_name']}' 과목의 시작 교시는 끝 교시보다 늦을 수 없습니다.")
+
+        periods_missed = class_period_end - class_period_start + 1
+        used_hours = get_course_used_hours(conn, student_id, cid, TERM)
+        if used_hours + periods_missed > MAX_ABSENCE_PERIODS_PER_COURSE:
+            conn.close()
+            remaining = max(0, MAX_ABSENCE_PERIODS_PER_COURSE - used_hours)
+            abort(400, f"'{course['course_name']}' 과목은 이번 학기 누적 {used_hours}시간이라 "
+                        f"{remaining}시간까지만 추가할 수 있습니다 (신청: {periods_missed}시간).")
+
+        selected.append({
+            **course,
+            "class_day": f"{class_date.month}/{class_date.day}",
+            "class_time": (f"{class_period_start}~{class_period_end}교시"
+                            if class_period_start != class_period_end else f"{class_period_start}교시"),
+            "class_date_iso": class_date.isoformat(),
+            "class_period_start": class_period_start,
+            "class_period_end": class_period_end,
+            "periods_missed": periods_missed,
+        })
 
     req = PermitRequest(
         student_number=student["student_number"],
@@ -199,10 +223,12 @@ def generate(student_id):
     with conn.cursor() as cur:
         cur.executemany(
             """INSERT INTO permit_records
-               (term, student_id, course_id, reason_code, period_start, period_end, periods_missed)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+               (term, student_id, course_id, reason_code, period_start, period_end,
+                class_date, class_period_start, class_period_end, periods_missed)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             [(TERM, student_id, c["id"], reason_code, period_start.isoformat(), period_end.isoformat(),
-              c["periods_missed"]) for c in selected],
+              c["class_date_iso"], c["class_period_start"], c["class_period_end"], c["periods_missed"])
+             for c in selected],
         )
     conn.commit()
     conn.close()
@@ -216,6 +242,24 @@ def generate(student_id):
     )
 
 
+@app.route("/records")
+def records():
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT p.id, p.created_at, s.student_number, s.name, s.grade, s.class_no,
+                  c.course_name, c.professor, p.reason_code,
+                  p.class_date, p.class_period_start, p.class_period_end, p.periods_missed
+           FROM permit_records p
+           JOIN students s ON s.id = p.student_id
+           JOIN courses c ON c.id = p.course_id
+           WHERE p.term = %s
+           ORDER BY p.created_at DESC""",
+        (TERM,),
+    ).fetchall()
+    conn.close()
+    return render_template("records.html", records=rows, reasons=REASON_LABELS, term=TERM)
+
+
 def _check_admin_token():
     expected = os.environ.get("ADMIN_TOKEN")
     if not expected:
@@ -223,6 +267,17 @@ def _check_admin_token():
                     "Render 서비스의 Environment 설정에 ADMIN_TOKEN을 추가해 주세요.")
     if request.form.get("admin_token") != expected:
         abort(403, "관리자 토큰이 올바르지 않습니다.")
+
+
+@app.route("/records/delete", methods=["POST"])
+def records_delete():
+    _check_admin_token()
+    record_id = request.form.get("delete_id")
+    conn = get_conn()
+    conn.execute("DELETE FROM permit_records WHERE id=%s", (record_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for("records"))
 
 
 @app.route("/admin/import", methods=["GET"])
@@ -259,12 +314,6 @@ def admin_import():
         if total_slots:
             log.append(f"총 수업 슬롯 {total_slots}건")
 
-        syllabus_file = request.files.get("syllabus")
-        if syllabus_file and syllabus_file.filename:
-            rows = parse_syllabus(syllabus_file.read())
-            load_syllabus(conn, rows, term)
-            log.append(f"강의계획서 {len(rows)}건으로 학점/코드 보강 완료")
-
         if not log:
             log.append("업로드된 파일이 없습니다. 최소 하나는 선택해 주세요.")
         else:
@@ -289,24 +338,6 @@ def admin_seed():
         "admin_import.html", term=TERM,
         result=["데모(더미) 데이터 적재 완료 — 학생 2명, 과목 2개"],
     )
-
-
-@app.route("/records")
-def records():
-    conn = get_conn()
-    rows = conn.execute(
-        """SELECT p.created_at, s.student_number, s.name, s.grade, s.class_no,
-                  c.course_name, c.professor, p.reason_code, p.period_start, p.period_end,
-                  p.periods_missed
-           FROM permit_records p
-           JOIN students s ON s.id = p.student_id
-           JOIN courses c ON c.id = p.course_id
-           WHERE p.term = %s
-           ORDER BY p.created_at DESC""",
-        (TERM,),
-    ).fetchall()
-    conn.close()
-    return render_template("records.html", records=rows, reasons=REASON_LABELS, term=TERM)
 
 
 if __name__ == "__main__":

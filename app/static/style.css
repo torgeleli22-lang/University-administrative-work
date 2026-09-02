@@ -20,10 +20,14 @@ header {
   background: var(--card);
   border-bottom: 1px solid var(--border);
   padding: 14px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .brand { font-weight: 700; text-decoration: none; color: var(--text); }
-.nav-link { float: right; color: var(--primary); text-decoration: none; font-size: 0.9rem; }
+nav { display: flex; gap: 18px; }
+.nav-link { color: var(--primary); text-decoration: none; font-size: 0.9rem; }
 
 main {
   max-width: 720px;
@@ -78,13 +82,26 @@ legend { font-weight: 700; padding: 0 6px; }
   font-size: 0.94rem;
 }
 
-fieldset label input[type=date] {
+fieldset label input[type=date],
+fieldset label input[type=text],
+fieldset label input[type=password],
+fieldset label select {
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
   margin-left: 6px;
   margin-right: 18px;
 }
+
+.course-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.course-card + .course-card { margin-top: 12px; }
+.course-card h3 { margin: 0 0 6px; font-size: 1rem; }
+.course-card .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
 
 .btn {
   display: inline-block;

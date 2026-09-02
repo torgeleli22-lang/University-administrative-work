@@ -1,10 +1,12 @@
 """Read helpers shared by the Flask routes."""
 from datetime import timedelta
 
-from app.config import MAX_USES_PER_COURSE, TERM, WEEKDAY_ORDER
+from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, TERM, WEEKDAY_ORDER
 
 
 def format_schedule(slots):
+    """Human-readable weekly schedule, e.g. ('화, 목', '3~4교시, 1~2교시') --
+    reference text only; actual 결석 교시 selection happens per class_date."""
     if not slots:
         return "미정", "미정"
     slots = sorted(slots, key=lambda s: (WEEKDAY_ORDER.index(s["day"]), s["period_start"]))
@@ -19,7 +21,7 @@ def format_schedule(slots):
 
 def get_course_slots(conn, course_id):
     """This course's weekly meeting slots, sorted 월->일, earliest period
-    first -- used to show "몇 교시부터 몇 교시인지" on the review step."""
+    first."""
     slots = conn.execute(
         "SELECT day, period_start, period_end FROM course_slots WHERE course_id=%s",
         (course_id,),
@@ -27,73 +29,68 @@ def get_course_slots(conn, course_id):
     return sorted(slots, key=lambda s: (WEEKDAY_ORDER.index(s["day"]), s["period_start"]))
 
 
-def describe_slots(slots):
-    """['월요일 1~3교시 (3시간)', ...] for display next to the 결석 교시 선택."""
-    lines = []
-    for s in slots:
-        span = s["period_end"] - s["period_start"] + 1
-        period_text = (
-            f"{s['period_start']}~{s['period_end']}교시"
-            if s["period_start"] != s["period_end"] else f"{s['period_start']}교시"
-        )
-        lines.append(f"{s['day']}요일 {period_text} ({span}시간)")
-    return lines
-
-
-def count_absence_periods(conn, course_id, period_start, period_end):
-    """Total 교시(periods) this course meets between period_start and
-    period_end (both inclusive calendar dates), summed over every day in
-    the range that lands on one of the course's weekly meeting days.
-    A course on periods 1~3 counts as 3 for each such day."""
+def get_valid_class_dates(conn, course_id, period_start, period_end):
+    """Every calendar date in [period_start, period_end] that lands on one
+    of this course's weekly meeting days, each paired with that slot's
+    period range -- the choices for "수업일" on the review step. Earliest
+    date first (so 결석 시작일, or the closest date to it, is the default)."""
     slots = get_course_slots(conn, course_id)
     if not slots:
-        return 0
-
-    periods_by_day = {}
+        return []
+    slot_by_day = {}
     for s in slots:
-        periods_by_day[s["day"]] = periods_by_day.get(s["day"], 0) + (s["period_end"] - s["period_start"] + 1)
+        slot_by_day.setdefault(s["day"], s)  # first slot wins if a day repeats
 
-    total = 0
+    dates = []
     day = period_start
     while day <= period_end:
-        total += periods_by_day.get(WEEKDAY_ORDER[day.weekday()], 0)
+        slot = slot_by_day.get(WEEKDAY_ORDER[day.weekday()])
+        if slot is not None:
+            dates.append({
+                "date": day,
+                "period_start": slot["period_start"],
+                "period_end": slot["period_end"],
+            })
         day += timedelta(days=1)
-    return total
+    return dates
+
+
+def get_course_used_hours(conn, student_id, course_id, term=TERM):
+    """Sum of 교시 hours already recorded for this student+course across
+    every 출석인정허가원 issued this term (permit_records), used to cap the
+    cumulative total under MAX_ABSENCE_PERIODS_PER_COURSE."""
+    row = conn.execute(
+        """SELECT COALESCE(SUM(periods_missed), 0) AS total FROM permit_records
+           WHERE term=%s AND student_id=%s AND course_id=%s""",
+        (term, student_id, course_id),
+    ).fetchone()
+    return row["total"]
 
 
 def get_student_courses(conn, student, term=TERM):
     """Courses offered to this student's (grade, section) this term, each
-    annotated with how many times it's already been used and whether it's
-    hit the per-course limit."""
+    annotated with cumulative hours already used and hours still available
+    before hitting the 12시간 cap."""
     rows = conn.execute(
         """SELECT * FROM courses WHERE term=%s AND grade=%s AND section=%s
            ORDER BY course_name""",
         (term, student["grade"], student["class_no"]),
     ).fetchall()
 
-    usage = {
-        r["course_id"]: r["n"]
-        for r in conn.execute(
-            """SELECT course_id, COUNT(*) AS n FROM permit_records
-               WHERE term=%s AND student_id=%s GROUP BY course_id""",
-            (term, student["id"]),
-        ).fetchall()
-    }
-
     courses = []
     for c in rows:
-        slots = conn.execute(
-            "SELECT * FROM course_slots WHERE course_id=%s", (c["id"],)
-        ).fetchall()
+        slots = get_course_slots(conn, c["id"])
         class_day, class_time = format_schedule(slots)
-        used = usage.get(c["id"], 0)
+        used_hours = get_course_used_hours(conn, student["id"], c["id"], term)
+        remaining = max(0, MAX_ABSENCE_PERIODS_PER_COURSE - used_hours)
         courses.append({
             "id": c["id"],
             "course_name": c["course_name"],
             "professor": c["professor"],
             "class_day": class_day,
             "class_time": class_time,
-            "used_count": used,
-            "at_limit": used >= MAX_USES_PER_COURSE,
+            "used_hours": used_hours,
+            "remaining_hours": remaining,
+            "at_limit": remaining <= 0,
         })
     return courses

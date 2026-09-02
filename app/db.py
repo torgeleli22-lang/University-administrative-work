@@ -35,8 +35,6 @@ SCHEMA = [
         section TEXT NOT NULL,
         course_name TEXT NOT NULL,
         professor TEXT NOT NULL,
-        course_code TEXT,
-        credits TEXT,
         UNIQUE (term, grade, section, course_name, professor)
     )
     """,
@@ -52,8 +50,10 @@ SCHEMA = [
         room TEXT
     )
     """,
-    # Audit log: one row per course covered by a generated permit, so we
-    # can enforce "최대 사용 횟수" and let staff see who used what.
+    # Audit log: one row per course covered by a generated permit, recording
+    # exactly which date and 교시 range was used (so cumulative-hour checks
+    # and staff review can both work off real history instead of recomputing
+    # from the course's weekly schedule).
     """
     CREATE TABLE IF NOT EXISTS permit_records (
         id SERIAL PRIMARY KEY,
@@ -63,6 +63,9 @@ SCHEMA = [
         reason_code INTEGER NOT NULL,
         period_start TEXT NOT NULL,
         period_end TEXT NOT NULL,
+        class_date TEXT NOT NULL,
+        class_period_start INTEGER NOT NULL,
+        class_period_end INTEGER NOT NULL,
         periods_missed INTEGER NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
@@ -71,10 +74,17 @@ SCHEMA = [
 
 # CREATE TABLE IF NOT EXISTS only helps on a brand-new database -- it's a
 # no-op against a table that already exists from an earlier version of
-# SCHEMA, so a column added later (like this one) never actually appears
-# there. ADD COLUMN IF NOT EXISTS is safe to rerun and heals that case too.
+# SCHEMA, so columns added or dropped later (like these) never actually
+# apply there. ADD/DROP COLUMN IF NOT EXISTS is safe to rerun and heals
+# that case too; this runs on every app startup (see app/app.py).
 MIGRATIONS = [
     "ALTER TABLE permit_records ADD COLUMN IF NOT EXISTS periods_missed INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE permit_records ADD COLUMN IF NOT EXISTS class_date TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE permit_records ADD COLUMN IF NOT EXISTS class_period_start INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE permit_records ADD COLUMN IF NOT EXISTS class_period_end INTEGER NOT NULL DEFAULT 0",
+    # 강의계획서 is no longer used as a data source.
+    "ALTER TABLE courses DROP COLUMN IF EXISTS course_code",
+    "ALTER TABLE courses DROP COLUMN IF EXISTS credits",
 ]
 
 

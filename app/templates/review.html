@@ -26,19 +26,32 @@
   <input type="hidden" name="period_end" value="{{ period_end }}">
 
   {% for c in reviewable %}
-  <fieldset>
-    <legend>{{ c.course_name }} — {{ c.professor }} 교수</legend>
+  <div class="course-card">
+    <h3>{{ c.course_name }} — {{ c.professor }} 교수</h3>
+    <p class="hint">평소 수업 시간: {{ c.class_day }} / {{ c.class_time }}
+      (이번 학기 누적 {{ c.used_hours }}시간, {{ c.remaining_hours }}시간까지 신청 가능)</p>
     <input type="hidden" name="course_ids" value="{{ c.id }}">
-    <p class="hint">수업 시간: {{ c.slot_lines | join(', ') }}</p>
-    <label>결석 교시 수
-      <select name="periods_{{ c.id }}">
-        {% for n in c.period_options %}
-        <option value="{{ n }}" {% if n == c.max_periods %}selected{% endif %}>{{ n }}시간(교시)</option>
-        {% endfor %}
-      </select>
-    </label>
-    <p class="hint">선택하신 결석 기간 동안 이 과목은 최대 {{ c.max_periods }}시간까지 인정됩니다.</p>
-  </fieldset>
+    <div class="row">
+      <label>수업일
+        <select name="class_date_{{ c.id }}" class="class-date-select" data-course="{{ c.id }}">
+          {% for d in c.valid_dates %}
+          <option value="{{ d.iso }}" data-start="{{ d.period_start }}" data-end="{{ d.period_end }}"
+            {% if loop.first %}selected{% endif %}>{{ d.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>시작 교시
+        <select name="class_period_start_{{ c.id }}" id="class_period_start_{{ c.id }}">
+          {% for n in c.period_choices %}<option value="{{ n }}">{{ n }}교시</option>{% endfor %}
+        </select>
+      </label>
+      <label>끝 교시
+        <select name="class_period_end_{{ c.id }}" id="class_period_end_{{ c.id }}">
+          {% for n in c.period_choices %}<option value="{{ n }}">{{ n }}교시</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+  </div>
   {% endfor %}
 
   <button type="submit" class="btn primary">한글(.hwpx) 파일로 다운로드</button>
@@ -47,4 +60,23 @@
 <p class="empty">신청 가능한 과목이 없습니다. 결석 기간이나 과목 선택을 다시 확인해 주세요.</p>
 <a class="btn" href="{{ url_for('student_form', student_id=student.id) }}">처음으로</a>
 {% endif %}
+
+<script>
+  // 수업일을 고르면 그 날짜에 실제로 열리는 교시로 시작/끝 교시 선택을
+  // 맞춰준다 (직접 다른 교시로 다시 바꾸는 것도 가능).
+  document.querySelectorAll(".class-date-select").forEach(function (sel) {
+    var cid = sel.dataset.course;
+    var startSel = document.getElementById("class_period_start_" + cid);
+    var endSel = document.getElementById("class_period_end_" + cid);
+
+    function sync() {
+      var opt = sel.options[sel.selectedIndex];
+      startSel.value = opt.dataset.start;
+      endSel.value = opt.dataset.end;
+    }
+
+    sel.addEventListener("change", sync);
+    sync();
+  });
+</script>
 {% endblock %}

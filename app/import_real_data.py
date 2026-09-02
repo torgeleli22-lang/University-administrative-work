@@ -1,6 +1,6 @@
 """Import real 학사 데이터(.xls) exported from the school system into the DB.
 
-Three kinds of files are expected, all in the old .xls (BIFF) format the
+Two kinds of files are expected, both in the old .xls (BIFF) format the
 학사 시스템 exports:
 
   * 재학생명단 (roster) -- one file, all grades/sections, containing
@@ -14,11 +14,8 @@ Three kinds of files are expected, all in the old .xls (BIFF) format the
     교시(period) x 요일(day) where each cell holds one or more lines like
     "A 데이터베이스기초 정재헌 남관 212" (분반/section, 과목명, 교수명,
     건물, 강의실). Multiple sections in one cell are newline-separated.
-
-  * 강의계획서 입력 현황 (syllabus index) -- one file, listing every
-    offered course with its 코드/학년/분반(numeric)/학점/교수명. Used only
-    to backfill course_code/credits on top of what the timetable already
-    gives us (course name, professor, day, time).
+    This alone tells us every course offered this term, who teaches it,
+    and which 교시 it meets -- no separate 강의계획서 file is needed.
 
 We deliberately do NOT store 주민등록번호 (resident registration number) --
 the form never needs it and there is no reason to keep even the partially
@@ -26,8 +23,7 @@ masked version around.
 
 Run:
     python -m app.import_real_data \\
-        --roster PATH --timetable GRADE:PATH [--timetable GRADE:PATH ...] \\
-        [--syllabus PATH]
+        --roster PATH --timetable GRADE:PATH [--timetable GRADE:PATH ...]
 
 None of the source .xls files or the populated database should be committed
 to git -- see .gitignore and README.md.
@@ -43,12 +39,6 @@ from app.db import get_conn, init_db
 
 ROSTER_BLOCK_HEADER = "재  학  생  명  단"
 BLOCK_INFO_RE = re.compile(r"학과\s*:\s*(\S+)\s+학년\s*:\s*(\d+)\s+반\s*:\s*(\S+)")
-
-# numeric 분반 code (last digit) -> section letter, as used consistently
-# across the 강의계획서 file for 1~3학년. 4학년(야간) only ever has a
-# single section, coded 801 in the syllabus but labelled "Y" on the
-# roster/timetable, so it's handled as a special case below.
-SECTION_DIGIT_MAP = {"1": "A", "2": "B", "3": "C"}
 
 DAY_NAMES = set(WEEKDAY_ORDER)
 
@@ -197,45 +187,6 @@ def parse_timetable(file_bytes, grade):
 
 
 # ---------------------------------------------------------------------------
-# 강의계획서 입력 현황 (syllabus index) -- optional enrichment
-# ---------------------------------------------------------------------------
-
-def parse_syllabus(file_bytes):
-    """Yields dicts: course_code, course_name, grade, section, credits, professor."""
-    book = xlrd.open_workbook(file_contents=file_bytes)
-    sh = book.sheet_by_index(0)
-
-    rows = []
-    for r in range(sh.nrows):
-        row = sh.row_values(r)
-        if len(row) <= 9:
-            continue
-        grade_val = _cell_str(row[5])
-        if not grade_val.isdigit():
-            continue
-        course_code = _cell_str(row[1])
-        course_name = _cell_str(row[4])
-        section_code = _cell_str(row[6])
-        credits = _cell_str(row[8])
-        professor = _cell_str(row[9])
-        if not course_name or not section_code:
-            continue
-        if grade_val == "4":
-            section = "Y"
-        else:
-            section = SECTION_DIGIT_MAP.get(section_code[-1], section_code)
-        rows.append({
-            "course_code": course_code,
-            "course_name": course_name,
-            "grade": grade_val,
-            "section": section,
-            "credits": credits,
-            "professor": professor,
-        })
-    return rows
-
-
-# ---------------------------------------------------------------------------
 # DB loading
 # ---------------------------------------------------------------------------
 
@@ -283,25 +234,11 @@ def load_timetable(conn, slots, term):
     )
 
 
-def load_syllabus(conn, rows, term):
-    # Same round-trip concern as load_timetable: one upsert per row instead
-    # of an UPDATE-then-maybe-INSERT pair.
-    cur = conn.cursor()
-    cur.executemany(
-        """INSERT INTO courses (term, grade, section, course_name, professor, course_code, credits)
-           VALUES (%(term)s, %(grade)s, %(section)s, %(course_name)s, %(professor)s, %(course_code)s, %(credits)s)
-           ON CONFLICT (term, grade, section, course_name, professor)
-           DO UPDATE SET course_code = excluded.course_code, credits = excluded.credits""",
-        [{**row, "term": term} for row in rows],
-    )
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--roster", required=True, help="재학생명단 .xls path")
     parser.add_argument("--timetable", action="append", default=[], metavar="GRADE:PATH",
                          help="e.g. --timetable 1:파일.xls (repeatable, one per grade)")
-    parser.add_argument("--syllabus", help="강의계획서 입력 현황 .xls path (optional)")
     parser.add_argument("--term", default=TERM)
     args = parser.parse_args()
 
@@ -322,12 +259,6 @@ def main():
         total_slots += len(slots)
         print(f"{grade}학년 시간표: 수업 {len(slots)}건 적재 완료 ({path})")
     print(f"총 수업 슬롯 {total_slots}건")
-
-    if args.syllabus:
-        with open(args.syllabus, "rb") as f:
-            rows = parse_syllabus(f.read())
-        load_syllabus(conn, rows, args.term)
-        print(f"강의계획서 {len(rows)}건으로 학점/코드 보강 완료")
 
     conn.commit()
     conn.close()
