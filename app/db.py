@@ -69,6 +69,14 @@ SCHEMA = [
     """,
 ]
 
+# CREATE TABLE IF NOT EXISTS only helps on a brand-new database -- it's a
+# no-op against a table that already exists from an earlier version of
+# SCHEMA, so a column added later (like this one) never actually appears
+# there. ADD COLUMN IF NOT EXISTS is safe to rerun and heals that case too.
+MIGRATIONS = [
+    "ALTER TABLE permit_records ADD COLUMN IF NOT EXISTS periods_missed INTEGER NOT NULL DEFAULT 0",
+]
+
 
 def get_conn():
     database_url = os.environ["DATABASE_URL"]
@@ -79,6 +87,8 @@ def init_db():
     conn = get_conn()
     with conn.cursor() as cur:
         for statement in SCHEMA:
+            cur.execute(statement)
+        for statement in MIGRATIONS:
             cur.execute(statement)
     conn.commit()
     conn.close()
