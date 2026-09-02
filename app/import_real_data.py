@@ -250,46 +250,50 @@ def load_roster(conn, students, term):
 
 
 def load_timetable(conn, slots, term):
+    # Neon is a remote DB -- every query is a network round trip, and a
+    # timetable easily has 50+ slots, so this used to do INSERT + SELECT +
+    # INSERT per slot (150+ round trips) and blew past gunicorn's request
+    # timeout. ON CONFLICT ... DO UPDATE ... RETURNING id gets the course's
+    # id in the same round trip as the upsert (a plain DO NOTHING doesn't
+    # return anything on conflict), and the course_slots rows are collected
+    # and sent as a single executemany instead of one INSERT each.
     cur = conn.cursor()
+    course_ids = {}
     for slot in slots:
-        cur.execute(
-            """INSERT INTO courses (term, grade, section, course_name, professor)
-               VALUES (%s, %s, %s, %s, %s)
-               ON CONFLICT (term, grade, section, course_name, professor) DO NOTHING""",
-            (term, slot["grade"], slot["section"], slot["course_name"], slot["professor"]),
-        )
-        course_id = cur.execute(
-            """SELECT id FROM courses
-               WHERE term=%s AND grade=%s AND section=%s AND course_name=%s AND professor=%s""",
-            (term, slot["grade"], slot["section"], slot["course_name"], slot["professor"]),
-        ).fetchone()["id"]
-        cur.execute(
-            """INSERT INTO course_slots (course_id, day, period_start, period_end, building, room)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            (course_id, slot["day"], slot["period_start"], slot["period_end"],
-             slot["building"], slot["room"]),
-        )
+        key = (slot["grade"], slot["section"], slot["course_name"], slot["professor"])
+        if key not in course_ids:
+            cur.execute(
+                """INSERT INTO courses (term, grade, section, course_name, professor)
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON CONFLICT (term, grade, section, course_name, professor)
+                   DO UPDATE SET term = excluded.term
+                   RETURNING id""",
+                (term, *key),
+            )
+            course_ids[key] = cur.fetchone()["id"]
+
+    cur.executemany(
+        """INSERT INTO course_slots (course_id, day, period_start, period_end, building, room)
+           VALUES (%s, %s, %s, %s, %s, %s)""",
+        [
+            (course_ids[(s["grade"], s["section"], s["course_name"], s["professor"])],
+             s["day"], s["period_start"], s["period_end"], s["building"], s["room"])
+            for s in slots
+        ],
+    )
 
 
 def load_syllabus(conn, rows, term):
+    # Same round-trip concern as load_timetable: one upsert per row instead
+    # of an UPDATE-then-maybe-INSERT pair.
     cur = conn.cursor()
-    for row in rows:
-        cur.execute(
-            """UPDATE courses SET course_code=%(course_code)s, credits=%(credits)s
-               WHERE term=%(term)s AND grade=%(grade)s AND section=%(section)s
-                 AND course_name=%(course_name)s""",
-            {**row, "term": term},
-        )
-        if cur.rowcount == 0:
-            # course only exists in the syllabus index, not in the timetable
-            # extract we have (e.g. no room assigned yet) -- still worth
-            # having it selectable, just without day/time info.
-            cur.execute(
-                """INSERT INTO courses (term, grade, section, course_name, professor, course_code, credits)
-                   VALUES (%(term)s, %(grade)s, %(section)s, %(course_name)s, %(professor)s, %(course_code)s, %(credits)s)
-                   ON CONFLICT (term, grade, section, course_name, professor) DO NOTHING""",
-                {**row, "term": term},
-            )
+    cur.executemany(
+        """INSERT INTO courses (term, grade, section, course_name, professor, course_code, credits)
+           VALUES (%(term)s, %(grade)s, %(section)s, %(course_name)s, %(professor)s, %(course_code)s, %(credits)s)
+           ON CONFLICT (term, grade, section, course_name, professor)
+           DO UPDATE SET course_code = excluded.course_code, credits = excluded.credits""",
+        [{**row, "term": term} for row in rows],
+    )
 
 
 def main():
