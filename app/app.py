@@ -26,6 +26,15 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # xls uploads are small; 20
 init_db()
 
 
+def render_maybe_partial(partial_template, full_template, **ctx):
+    """The single-page apply flow's own fetch() calls set X-Partial so they
+    get back just the fragment to inject; a plain browser navigation (JS
+    off, direct link, page refresh) has no such header and gets the full
+    page instead."""
+    template = partial_template if request.headers.get("X-Partial") == "1" else full_template
+    return render_template(template, **ctx)
+
+
 def _search_students(q):
     if not q:
         return []
@@ -64,8 +73,8 @@ def student_form(student_id):
         abort(404)
     courses = get_student_courses(conn, student)
     conn.close()
-    return render_template(
-        "form.html",
+    return render_maybe_partial(
+        "_student_panel.html", "form.html",
         student=student,
         courses=courses,
         reasons=REASON_LABELS,
@@ -138,8 +147,8 @@ def review(student_id):
             "period_choices": PERIOD_CHOICES,
         })
 
-    return render_template(
-        "review.html",
+    return render_maybe_partial(
+        "_review_panel.html", "review.html",
         student=student,
         reason_code=reason_code,
         reason_label=REASON_LABELS[reason_code],

@@ -3,12 +3,17 @@
 <h1>출석인정허가원 작성</h1>
 <form method="get" class="search-bar" id="search-form">
   <input type="text" name="q" id="search-input" placeholder="학번 또는 이름으로 검색" value="{{ q }}" autofocus autocomplete="off">
-  <button type="submit">검색</button>
+  <button type="submit" class="btn primary">검색</button>
 </form>
 
 <div id="results">
   {% include "_student_results.html" %}
 </div>
+
+{# Filled in-place by app.js when a student's "허가원 작성" link is clicked,
+   and again when that panel's form is submitted -- no full page reload. #}
+<div id="student-panel" class="panel" hidden></div>
+<div id="review-panel" class="panel" hidden></div>
 
 <script>
   // 입력할 때마다 페이지 전체를 새로고침하지 않고, 결과 부분(#results)만

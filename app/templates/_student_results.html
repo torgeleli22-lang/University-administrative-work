@@ -19,7 +19,7 @@
         <td>{{ s.department }}</td>
         <td>{{ s.grade }}</td>
         <td>{{ s.class_no }}</td>
-        <td><a class="btn" href="{{ url_for('student_form', student_id=s.id) }}">허가원 작성</a></td>
+        <td><a class="btn js-open-student" href="{{ url_for('student_form', student_id=s.id) }}">허가원 작성</a></td>
       </tr>
       {% endfor %}
     </tbody>

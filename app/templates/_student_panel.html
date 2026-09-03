@@ -1,0 +1,59 @@
+{# Reusable fragment: shown both as a full page (form.html, for direct
+   navigation / JS off) and injected into #student-panel by app.js for the
+   single-page apply flow. Must not depend on being inside {% block %}. #}
+<div class="panel-head">
+  <h2>{{ student.name }} 학생 — 결석 신청서 작성</h2>
+  <button type="button" class="btn ghost" data-close-panel="student-panel">✕ 닫기</button>
+</div>
+
+<section class="info-card">
+  <dl>
+    <dt>학과</dt><dd>{{ student.department }}</dd>
+    <dt>학년</dt><dd>{{ student.grade }}</dd>
+    <dt>학번</dt><dd>{{ student.student_number }}</dd>
+    <dt>반</dt><dd>{{ student.class_no }}</dd>
+    <dt>성명</dt><dd>{{ student.name }}</dd>
+  </dl>
+</section>
+
+<form method="post" action="{{ url_for('review', student_id=student.id) }}" class="js-review-form">
+  <fieldset>
+    <legend>결석 사유</legend>
+    {% for code, label in reasons.items() %}
+    <label class="radio-row">
+      <input type="radio" name="reason_code" value="{{ code }}" {% if loop.first %}required{% endif %}>
+      {{ label }}
+    </label>
+    {% endfor %}
+  </fieldset>
+
+  <fieldset>
+    <legend>결석 기간</legend>
+    <label>시작일 <input type="date" class="js-period-start" name="period_start" value="{{ today }}" required></label>
+    <label>종료일 <input type="date" class="js-period-end" name="period_end" value="{{ today }}" min="{{ today }}" required></label>
+    <p class="hint">* 과목당 이 기간 동안 결석으로 인정 가능한 시간은 최대
+      {{ max_absence_periods }}시간(교시)입니다. 정확한 교시는 다음 단계에서
+      과목별로 선택합니다.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>결석 과목 (최대 {{ max_courses }}개, 과목당 누적 최대 {{ max_absence_periods }}시간까지)</legend>
+    {% if courses %}
+      {% for c in courses %}
+      <label class="checkbox-row {{ 'disabled' if c.at_limit }}">
+        <input type="checkbox" name="course_ids" value="{{ c.id }}" {% if c.at_limit %}disabled{% endif %}>
+        {{ c.course_name }} — {{ c.professor }} 교수 ({{ c.class_day }} / {{ c.class_time }})
+        {% if c.at_limit %}
+          <span class="badge">누적 {{ c.used_hours }}시간 — 신청 불가</span>
+        {% elif c.used_hours > 0 %}
+          <span class="hint">(누적 {{ c.used_hours }}시간 사용, {{ c.remaining_hours }}시간 남음)</span>
+        {% endif %}
+      </label>
+      {% endfor %}
+    {% else %}
+      <p class="empty">등록된 수강 과목이 없습니다. 관리자에게 문의하세요.</p>
+    {% endif %}
+  </fieldset>
+
+  <button type="submit" class="btn primary">다음 — 결석 교시 선택</button>
+</form>
