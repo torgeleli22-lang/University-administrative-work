@@ -69,14 +69,14 @@ nav { display: flex; gap: 4px; }
 .nav-link:hover { background: var(--primary-soft); color: var(--primary); }
 
 main {
-  max-width: 840px;
+  max-width: 1100px;
   margin: var(--space-6) auto;
-  padding: 0 var(--space-4) var(--space-6);
+  padding: 0 var(--space-5) var(--space-6);
   transition: max-width 0.15s ease;
 }
-/* Pages with many columns of data (사용 기록) get the full width instead of
+/* Pages with many columns of data (사용 기록) get even more width instead of
    squeezing every column until its text wraps vertically. */
-main.main-wide { max-width: 1200px; }
+main.main-wide { max-width: 1500px; }
 
 h1 {
   font-size: 1.45rem;
@@ -152,10 +152,24 @@ table.student-table {
   padding: var(--space-4) var(--space-5);
   margin-bottom: var(--space-5);
   box-shadow: var(--shadow-sm);
+  max-width: 640px;
 }
 .info-card dl { display: grid; grid-template-columns: auto 1fr; gap: 7px 18px; margin: 0; }
 .info-card dt { color: var(--text-muted); font-size: 0.85rem; }
 .info-card dd { margin: 0; font-weight: 700; }
+
+/* Reason radios and course checkboxes as a responsive grid of boxes
+   instead of one narrow vertical list, so wider screens show several
+   side by side. */
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-2);
+}
+.option-body { display: flex; flex-direction: column; gap: 3px; }
+.option-title { font-weight: 600; }
+.option-meta { font-size: 0.82rem; color: var(--text-muted); }
+.checkbox-row .badge { align-self: flex-start; margin-top: 2px; }
 
 fieldset {
   background: var(--card);
@@ -173,16 +187,22 @@ legend {
 
 .radio-row, .checkbox-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  padding: 9px 10px;
+  padding: 10px 12px;
   font-size: 0.94rem;
+  border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
+  background: var(--card);
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
-.radio-row:hover, .checkbox-row:hover { background: #fafafd; }
-.radio-row:has(input:checked), .checkbox-row:has(input:checked) { background: var(--primary-soft); }
+.radio-row input, .checkbox-row input { margin-top: 2px; }
+.radio-row:hover, .checkbox-row:hover { border-color: var(--border-strong); background: #fafafd; }
+.radio-row:has(input:checked), .checkbox-row:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
 .radio-row:active, .checkbox-row:active { background: var(--primary-soft); }
 .radio-row input, .checkbox-row input {
   width: 16px;
@@ -215,18 +235,74 @@ input[type="file"] {
   padding: 6px 0;
 }
 
+/* Course cards (review + confirm steps) as a responsive grid so wider
+   screens show several side by side instead of one long vertical list. */
+.course-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
 .course-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--space-4) var(--space-5);
-  margin-bottom: var(--space-3);
   background: var(--card);
   box-shadow: var(--shadow-sm);
 }
-.course-card + .course-card { margin-top: var(--space-3); }
 .course-card h3 { margin: 0 0 6px; }
 .course-card .row { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-2) 0 0; flex-wrap: wrap; }
 .course-card .row label { font-size: 0.85rem; color: var(--text-muted); font-weight: 600; }
+
+.field-group { margin-top: var(--space-3); }
+.field-label { display: block; font-size: 0.85rem; color: var(--text-muted); font-weight: 600; margin-bottom: 6px; }
+
+/* 수업일 choices as clickable "chip" boxes -- a calendar-like date + 요일
+   box per valid date, instead of a plain <select> dropdown. */
+.date-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.date-chip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.05s ease;
+}
+.date-chip input { position: absolute; opacity: 0; width: 0; height: 0; }
+.date-chip-weekday { font-size: 0.7rem; color: var(--text-muted); font-weight: 700; }
+.date-chip-date { font-size: 0.95rem; font-weight: 700; margin-top: 2px; }
+.date-chip:hover { border-color: var(--primary); }
+.date-chip:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+.date-chip:active { transform: scale(0.96); }
+.date-chip.makeup { border-style: dashed; }
+.date-chip-badge {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  background: var(--success);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+/* 최종 확인 step */
+.confirm-card { background: var(--success-soft); border-color: #cfe9d7; }
+.confirm-summary { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: var(--space-2) 0 0; }
+.confirm-summary dt { color: var(--text-muted); font-size: 0.82rem; }
+.confirm-summary dd { margin: 0; font-weight: 600; font-size: 0.9rem; }
+.confirm-actions { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 
 .btn {
   display: inline-flex;

@@ -46,12 +46,14 @@
 <form method="post" action="{{ url_for('review', student_id=student.id) }}" class="js-review-form">
   <fieldset>
     <legend>결석 사유</legend>
-    {% for code, label in reasons.items() %}
-    <label class="radio-row">
-      <input type="radio" name="reason_code" value="{{ code }}" {% if loop.first %}required{% endif %}>
-      {{ label }}
-    </label>
-    {% endfor %}
+    <div class="option-grid">
+      {% for code, label in reasons.items() %}
+      <label class="radio-row">
+        <input type="radio" name="reason_code" value="{{ code }}" {% if loop.first %}required{% endif %}>
+        {{ label }}
+      </label>
+      {% endfor %}
+    </div>
   </fieldset>
 
   <fieldset>
@@ -66,17 +68,22 @@
   <fieldset>
     <legend>결석 과목 (최대 {{ max_courses }}개, 과목당 누적 최대 {{ max_absence_periods }}시간까지)</legend>
     {% if courses %}
+      <div class="option-grid">
       {% for c in courses %}
       <label class="checkbox-row {{ 'disabled' if c.at_limit }}">
         <input type="checkbox" name="course_ids" value="{{ c.id }}" {% if c.at_limit %}disabled{% endif %}>
-        {{ c.course_name }} — {{ c.professor }} 교수 ({{ c.class_day }} / {{ c.class_time }})
-        {% if c.at_limit %}
-          <span class="badge">누적 {{ c.used_hours }}시간 — 신청 불가</span>
-        {% elif c.used_hours > 0 %}
-          <span class="hint">(누적 {{ c.used_hours }}시간 사용, {{ c.remaining_hours }}시간 남음)</span>
-        {% endif %}
+        <span class="option-body">
+          <span class="option-title">{{ c.course_name }} — {{ c.professor }} 교수</span>
+          <span class="option-meta">{{ c.class_day }} / {{ c.class_time }}</span>
+          {% if c.at_limit %}
+            <span class="badge">누적 {{ c.used_hours }}시간 — 신청 불가</span>
+          {% elif c.used_hours > 0 %}
+            <span class="badge ok">누적 {{ c.used_hours }}시간 사용, {{ c.remaining_hours }}시간 남음</span>
+          {% endif %}
+        </span>
       </label>
       {% endfor %}
+      </div>
     {% else %}
       <p class="empty">등록된 수강 과목이 없습니다. 관리자에게 문의하세요.</p>
     {% endif %}

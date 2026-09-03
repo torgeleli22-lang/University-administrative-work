@@ -155,10 +155,14 @@ def review(student_id):
             continue
         reviewable.append({
             **course,
+            # Rendered as individual clickable date "chips" (not a plain
+            # dropdown), so the review template gets the date's parts
+            # separately instead of one pre-formatted label string.
             "valid_dates": [
                 {"iso": d["date"].isoformat(),
-                 "label": (f"{d['date'].month}/{d['date'].day} ({'월화수목금토일'[d['date'].weekday()]}"
-                           f"{'·보강' if d['is_makeup'] else ''})"),
+                 "month": d["date"].month, "day": d["date"].day,
+                 "weekday": "월화수목금토일"[d["date"].weekday()],
+                 "is_makeup": d["is_makeup"],
                  "period_start": d["period_start"], "period_end": d["period_end"]}
                 for d in valid_dates
             ],
@@ -178,64 +182,60 @@ def review(student_id):
     )
 
 
-@app.route("/student/<int:student_id>/generate", methods=["POST"])
-def generate(student_id):
-    conn = get_conn()
-    student = conn.execute(
-        "SELECT * FROM students WHERE id=%s AND term=%s", (student_id, TERM)
-    ).fetchone()
-    if student is None:
-        conn.close()
-        abort(404)
-
-    reason_code = int(request.form["reason_code"])
-    period_start, period_end = _parse_period(request.form)
-    course_ids = [int(cid) for cid in request.form.getlist("course_ids")]
-
-    if len(course_ids) > MAX_COURSES:
-        conn.close()
-        abort(400, f"결석 과목은 최대 {MAX_COURSES}개까지 선택할 수 있습니다.")
-
+def _load_selection_context(conn, student, student_id, course_ids):
+    """Every piece of DB data needed to validate a course/date/교시
+    selection, fetched in the same four bulk queries regardless of how
+    many courses were selected. Shared by /confirm and /generate so both
+    validate against the exact same data."""
     available = {c["id"]: c for c in get_student_courses(conn, student)}
     slots_by_course = get_slots_by_course(conn, course_ids)
     makeups_by_course = get_makeups_by_course(conn, course_ids)
     used_by_course = get_used_hours_by_course(conn, student_id, course_ids, TERM)
+    return available, slots_by_course, makeups_by_course, used_by_course
+
+
+def _validate_selection(form, course_ids, period_start, period_end,
+                         available, slots_by_course, makeups_by_course, used_by_course):
+    """Pure validation (no DB access) shared by /confirm and /generate:
+    checks each course's chosen 수업일 is actually a date that course
+    meets on (weekly schedule, minus 결강, plus 보강), the 교시 range is
+    sane, and adding it wouldn't push the course's cumulative hours to
+    12+. Aborts with 400 on the first problem found. Returns one dict per
+    course with class_day/class_time/class_date_iso/class_period_start/
+    class_period_end/periods_missed added on top of the course's own
+    fields (course_name, professor, used_hours, ...)."""
+    if len(course_ids) > MAX_COURSES:
+        abort(400, f"결석 과목은 최대 {MAX_COURSES}개까지 선택할 수 있습니다.")
 
     selected = []
     for cid in course_ids:
         course = available.get(cid)
         if course is None:
-            conn.close()
             abort(400, "선택한 과목을 찾을 수 없습니다.")
 
-        class_date_raw = request.form.get(f"class_date_{cid}", "")
+        class_date_raw = form.get(f"class_date_{cid}", "")
         try:
             class_date = datetime.strptime(class_date_raw, "%Y-%m-%d").date()
         except ValueError:
-            conn.close()
             abort(400, f"'{course['course_name']}' 과목의 수업일을 선택해 주세요.")
 
         valid_dates = {d["date"] for d in valid_class_dates(
             slots_by_course[cid], period_start, period_end, makeups_by_course[cid])}
         if class_date not in valid_dates:
-            conn.close()
             abort(400, f"'{course['course_name']}' 과목은 {class_date.month}/{class_date.day}에 "
                         f"수업이 없습니다.")
 
         try:
-            class_period_start = int(request.form.get(f"class_period_start_{cid}", ""))
-            class_period_end = int(request.form.get(f"class_period_end_{cid}", ""))
+            class_period_start = int(form.get(f"class_period_start_{cid}", ""))
+            class_period_end = int(form.get(f"class_period_end_{cid}", ""))
         except ValueError:
-            conn.close()
             abort(400, f"'{course['course_name']}' 과목의 수업 시간(교시)을 선택해 주세요.")
         if not (1 <= class_period_start <= class_period_end <= max(PERIOD_CHOICES)):
-            conn.close()
             abort(400, f"'{course['course_name']}' 과목의 시작 교시는 끝 교시보다 늦을 수 없습니다.")
 
         periods_missed = class_period_end - class_period_start + 1
         used_hours = used_by_course[cid]
         if used_hours + periods_missed > MAX_ABSENCE_PERIODS_PER_COURSE:
-            conn.close()
             remaining = max(0, MAX_ABSENCE_PERIODS_PER_COURSE - used_hours)
             abort(400, f"'{course['course_name']}' 과목은 이번 학기 누적 {used_hours}시간이라 "
                         f"{remaining}시간까지만 추가할 수 있습니다 (신청: {periods_missed}시간).")
@@ -251,6 +251,63 @@ def generate(student_id):
             "periods_missed": periods_missed,
         })
 
+    return selected
+
+
+@app.route("/student/<int:student_id>/confirm", methods=["POST"])
+def confirm(student_id):
+    """Third step: a read-only summary of exactly what will be submitted
+    (per course: which date, which 교시, and the resulting cumulative
+    hours) with a "확인 및 등록" button that's the only thing that actually
+    posts to /generate -- lets the office double check the selection
+    before the permit is written to the DB and downloaded, instead of the
+    review step's own submit doing that directly."""
+    conn = get_conn()
+    student = conn.execute(
+        "SELECT * FROM students WHERE id=%s AND term=%s", (student_id, TERM)
+    ).fetchone()
+    if student is None:
+        conn.close()
+        abort(404)
+
+    reason_code = int(request.form["reason_code"])
+    period_start, period_end = _parse_period(request.form)
+    course_ids = [int(cid) for cid in request.form.getlist("course_ids")]
+
+    context = _load_selection_context(conn, student, student_id, course_ids)
+    conn.close()
+    selected = _validate_selection(request.form, course_ids, period_start, period_end, *context)
+
+    return render_maybe_partial(
+        "_confirm_panel.html", "confirm.html",
+        student=student,
+        reason_code=reason_code,
+        reason_label=REASON_LABELS[reason_code],
+        period_start=period_start.isoformat(),
+        period_end=period_end.isoformat(),
+        selected=selected,
+        total_hours=sum(c["periods_missed"] for c in selected),
+    )
+
+
+@app.route("/student/<int:student_id>/generate", methods=["POST"])
+def generate(student_id):
+    conn = get_conn()
+    student = conn.execute(
+        "SELECT * FROM students WHERE id=%s AND term=%s", (student_id, TERM)
+    ).fetchone()
+    if student is None:
+        conn.close()
+        abort(404)
+
+    reason_code = int(request.form["reason_code"])
+    period_start, period_end = _parse_period(request.form)
+    course_ids = [int(cid) for cid in request.form.getlist("course_ids")]
+
+    context = _load_selection_context(conn, student, student_id, course_ids)
+    conn.close()  # closed before validation so an abort() here can't leak the connection
+    selected = _validate_selection(request.form, course_ids, period_start, period_end, *context)
+
     req = PermitRequest(
         student_number=student["student_number"],
         name=student["name"],
@@ -265,6 +322,7 @@ def generate(student_id):
 
     data = generate_hwpx(str(TEMPLATE_HWPX), req)
 
+    conn = get_conn()
     with conn.cursor() as cur:
         cur.executemany(
             """INSERT INTO permit_records

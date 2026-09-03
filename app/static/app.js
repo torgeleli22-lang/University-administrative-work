@@ -25,19 +25,23 @@ window.App = (function () {
   }
 
   function hydrateDateSync(root) {
-    root.querySelectorAll(".class-date-select").forEach(function (sel) {
-      if (sel.dataset.hydrated) return;
-      sel.dataset.hydrated = "1";
-      var cid = sel.dataset.course;
+    // Each 수업일 choice is a "chip" (a styled label wrapping a radio
+    // input) rather than a <select>; picking one still fills in the
+    // matching 시작/끝 교시 selects the same way the old dropdown did.
+    root.querySelectorAll(".date-chip-row").forEach(function (row) {
+      if (row.dataset.hydrated) return;
+      row.dataset.hydrated = "1";
+      var cid = row.dataset.course;
       var startSel = root.querySelector("#class_period_start_" + cid);
       var endSel = root.querySelector("#class_period_end_" + cid);
       if (!startSel || !endSel) return;
       function sync() {
-        var opt = sel.options[sel.selectedIndex];
-        startSel.value = opt.dataset.start;
-        endSel.value = opt.dataset.end;
+        var checked = row.querySelector("input:checked");
+        if (!checked) return;
+        startSel.value = checked.dataset.start;
+        endSel.value = checked.dataset.end;
       }
-      sel.addEventListener("change", sync);
+      row.addEventListener("change", sync);
       sync();
     });
   }
@@ -115,6 +119,42 @@ window.App = (function () {
     el.innerHTML = '<p class="loading">불러오는 중...</p>';
   }
 
+  function clearPanel(id) {
+    var el = document.getElementById(id);
+    if (el) {
+      el.hidden = true;
+      el.innerHTML = "";
+    }
+  }
+
+  // Generic "submit this form into that panel" used for both apply-flow
+  // steps (student -> review -> confirm): each fetches its target panel
+  // with X-Partial so it gets back just the fragment, and clears whatever
+  // comes after it in the flow since that content is now stale.
+  function wireStepForm(formClass, panelId, clearIds) {
+    document.addEventListener("submit", function (e) {
+      var form = e.target.closest("form." + formClass);
+      if (!form) return;
+      var panel = document.getElementById(panelId);
+      if (!panel) return; // fallback: normal submit -> full page for this step
+      e.preventDefault();
+      clearIds.forEach(clearPanel);
+      setLoading(panel);
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      fetch(form.action, {
+        method: "POST",
+        headers: { "X-Partial": "1" },
+        body: new FormData(form),
+      })
+        .then(function (res) { return res.text(); })
+        .then(function (html) {
+          panel.innerHTML = html;
+          showPanel(panel);
+          hydrateAll(panel);
+        });
+    });
+  }
+
   function initSpaNav() {
     document.addEventListener("click", function (e) {
       var link = e.target.closest("a.js-open-student");
@@ -122,11 +162,8 @@ window.App = (function () {
       var panel = document.getElementById("student-panel");
       if (!panel) return; // no SPA container on this page -- let it navigate normally
       e.preventDefault();
-      var reviewPanel = document.getElementById("review-panel");
-      if (reviewPanel) {
-        reviewPanel.hidden = true;
-        reviewPanel.innerHTML = "";
-      }
+      clearPanel("review-panel");
+      clearPanel("confirm-panel");
       setLoading(panel);
       fetch(link.href, { headers: { "X-Partial": "1" } })
         .then(function (res) { return res.text(); })
@@ -138,26 +175,8 @@ window.App = (function () {
         });
     });
 
-    document.addEventListener("submit", function (e) {
-      var form = e.target.closest("form.js-review-form");
-      if (!form) return;
-      var reviewPanel = document.getElementById("review-panel");
-      if (!reviewPanel) return; // fallback: normal submit -> full review page
-      e.preventDefault();
-      setLoading(reviewPanel);
-      reviewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-      fetch(form.action, {
-        method: "POST",
-        headers: { "X-Partial": "1" },
-        body: new FormData(form),
-      })
-        .then(function (res) { return res.text(); })
-        .then(function (html) {
-          reviewPanel.innerHTML = html;
-          showPanel(reviewPanel);
-          hydrateAll(reviewPanel);
-        });
-    });
+    wireStepForm("js-review-form", "review-panel", ["confirm-panel"]);
+    wireStepForm("js-confirm-form", "confirm-panel", []);
 
     document.addEventListener("click", function (e) {
       var btn = e.target.closest("[data-close-panel]");

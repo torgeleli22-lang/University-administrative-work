@@ -10,10 +10,12 @@
   {% include "_student_results.html" %}
 </div>
 
-{# Filled in-place by app.js when a student's "허가원 작성" link is clicked,
-   and again when that panel's form is submitted -- no full page reload. #}
+{# Filled in-place by app.js as the apply flow progresses (student ->
+   review -> confirm), each one appended below the previous -- no full
+   page reload at any step. #}
 <div id="student-panel" class="panel" hidden></div>
 <div id="review-panel" class="panel" hidden></div>
+<div id="confirm-panel" class="panel" hidden></div>
 
 <script>
   // 입력할 때마다 페이지 전체를 새로고침하지 않고, 결과 부분(#results)만
