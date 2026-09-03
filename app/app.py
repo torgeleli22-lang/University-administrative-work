@@ -163,6 +163,12 @@ def review(student_id):
                  "month": d["date"].month, "day": d["date"].day,
                  "weekday": "월화수목금토일"[d["date"].weekday()],
                  "is_makeup": d["is_makeup"],
+                 # For a 보강 date, the office needs to see which regular
+                 # session it's standing in for right on the chip, not just
+                 # that it's "somehow special" -- e.g. "9/18 → 9/22 결강".
+                 "replaces_label": (f"{d['replaces'].month}/{d['replaces'].day}"
+                                     f"({'월화수목금토일'[d['replaces'].weekday()]})"
+                                     if d.get("replaces") else None),
                  "period_start": d["period_start"], "period_end": d["period_end"]}
                 for d in valid_dates
             ],
@@ -196,60 +202,89 @@ def _load_selection_context(conn, student, student_id, course_ids):
 
 def _validate_selection(form, course_ids, period_start, period_end,
                          available, slots_by_course, makeups_by_course, used_by_course):
-    """Pure validation (no DB access) shared by /confirm and /generate:
-    checks each course's chosen 수업일 is actually a date that course
-    meets on (weekly schedule, minus 결강, plus 보강), the 교시 range is
-    sane, and adding it wouldn't push the course's cumulative hours to
-    12+. Aborts with 400 on the first problem found. Returns one dict per
-    course with class_day/class_time/class_date_iso/class_period_start/
-    class_period_end/periods_missed added on top of the course's own
-    fields (course_name, professor, used_hours, ...)."""
-    if len(course_ids) > MAX_COURSES:
-        abort(400, f"결석 과목은 최대 {MAX_COURSES}개까지 선택할 수 있습니다.")
+    """Pure validation (no DB access) shared by /confirm and /generate. A
+    course can have more than one 수업일 checked at once (class_dates_{id},
+    a multi-value checkbox group), each with its own 교시 range
+    (period_start_{id}_{iso}/period_end_{id}_{iso}) -- so this returns one
+    dict per (course, date) instance, not per course, and the physical
+    form ends up with one row per instance (hwpx_filler just zips however
+    many dicts come back against its blank rows). A course with none of
+    its dates checked is silently dropped rather than erroring, since
+    that's how the review step lets someone back out of a course without
+    returning to the previous step.
 
+    The 12시간 cap is checked cumulatively as we go through a course's own
+    picks in this same submission too (not just against history already on
+    file), so e.g. two 6시간 picks for one course in one submission
+    correctly hit the cap against each other. Aborts with 400 on the first
+    problem found. Each returned dict adds class_day/class_time/
+    class_date_iso/class_period_start/class_period_end/periods_missed on
+    top of the course's own fields (course_name, professor, ...); used_hours
+    is overridden to the running cumulative total *before* this instance,
+    for display (used_hours + periods_missed = cumulative after it)."""
     selected = []
+    running_used = dict(used_by_course)
+
     for cid in course_ids:
         course = available.get(cid)
         if course is None:
             abort(400, "선택한 과목을 찾을 수 없습니다.")
 
-        class_date_raw = form.get(f"class_date_{cid}", "")
-        try:
-            class_date = datetime.strptime(class_date_raw, "%Y-%m-%d").date()
-        except ValueError:
-            abort(400, f"'{course['course_name']}' 과목의 수업일을 선택해 주세요.")
+        class_dates_raw = form.getlist(f"class_dates_{cid}")
+        if not class_dates_raw:
+            continue
 
-        valid_dates = {d["date"] for d in valid_class_dates(
+        valid_dates = {d["date"]: d for d in valid_class_dates(
             slots_by_course[cid], period_start, period_end, makeups_by_course[cid])}
-        if class_date not in valid_dates:
-            abort(400, f"'{course['course_name']}' 과목은 {class_date.month}/{class_date.day}에 "
-                        f"수업이 없습니다.")
 
-        try:
-            class_period_start = int(form.get(f"class_period_start_{cid}", ""))
-            class_period_end = int(form.get(f"class_period_end_{cid}", ""))
-        except ValueError:
-            abort(400, f"'{course['course_name']}' 과목의 수업 시간(교시)을 선택해 주세요.")
-        if not (1 <= class_period_start <= class_period_end <= max(PERIOD_CHOICES)):
-            abort(400, f"'{course['course_name']}' 과목의 시작 교시는 끝 교시보다 늦을 수 없습니다.")
+        for class_date_raw in class_dates_raw:
+            try:
+                class_date = datetime.strptime(class_date_raw, "%Y-%m-%d").date()
+            except ValueError:
+                abort(400, f"'{course['course_name']}' 과목의 수업일이 올바르지 않습니다.")
 
-        periods_missed = class_period_end - class_period_start + 1
-        used_hours = used_by_course[cid]
-        if used_hours + periods_missed > MAX_ABSENCE_PERIODS_PER_COURSE:
-            remaining = max(0, MAX_ABSENCE_PERIODS_PER_COURSE - used_hours)
-            abort(400, f"'{course['course_name']}' 과목은 이번 학기 누적 {used_hours}시간이라 "
-                        f"{remaining}시간까지만 추가할 수 있습니다 (신청: {periods_missed}시간).")
+            date_info = valid_dates.get(class_date)
+            if date_info is None:
+                abort(400, f"'{course['course_name']}' 과목은 {class_date.month}/{class_date.day}에 "
+                            f"수업이 없습니다.")
 
-        selected.append({
-            **course,
-            "class_day": f"{class_date.month}/{class_date.day}",
-            "class_time": (f"{class_period_start}~{class_period_end}교시"
-                            if class_period_start != class_period_end else f"{class_period_start}교시"),
-            "class_date_iso": class_date.isoformat(),
-            "class_period_start": class_period_start,
-            "class_period_end": class_period_end,
-            "periods_missed": periods_missed,
-        })
+            try:
+                class_period_start = int(form.get(f"period_start_{cid}_{class_date_raw}", ""))
+                class_period_end = int(form.get(f"period_end_{cid}_{class_date_raw}", ""))
+            except ValueError:
+                abort(400, f"'{course['course_name']}' {class_date.month}/{class_date.day}의 "
+                            f"수업 시간(교시)을 선택해 주세요.")
+            if not (1 <= class_period_start <= class_period_end <= max(PERIOD_CHOICES)):
+                abort(400, f"'{course['course_name']}' {class_date.month}/{class_date.day}의 "
+                            f"시작 교시는 끝 교시보다 늦을 수 없습니다.")
+
+            periods_missed = class_period_end - class_period_start + 1
+            used_hours = running_used.get(cid, 0)
+            if used_hours + periods_missed > MAX_ABSENCE_PERIODS_PER_COURSE:
+                remaining = max(0, MAX_ABSENCE_PERIODS_PER_COURSE - used_hours)
+                abort(400, f"'{course['course_name']}' 과목은 {class_date.month}/{class_date.day} 포함 "
+                            f"이번 학기 누적 {used_hours}시간이라 {remaining}시간까지만 추가할 수 있습니다 "
+                            f"(신청: {periods_missed}시간).")
+            running_used[cid] = used_hours + periods_missed
+
+            replaces = date_info.get("replaces")
+            selected.append({
+                **course,
+                "used_hours": used_hours,
+                "class_day": f"{class_date.month}/{class_date.day}",
+                "class_time": (f"{class_period_start}~{class_period_end}교시"
+                                if class_period_start != class_period_end else f"{class_period_start}교시"),
+                "class_date_iso": class_date.isoformat(),
+                "class_period_start": class_period_start,
+                "class_period_end": class_period_end,
+                "periods_missed": periods_missed,
+                "is_makeup": date_info["is_makeup"],
+                "replaces_label": f"{replaces.month}/{replaces.day}" if replaces else None,
+            })
+
+    if len(selected) > MAX_COURSES:
+        abort(400, f"한 번에 신청 가능한 결석 항목(과목 × 수업일)은 최대 {MAX_COURSES}개입니다 "
+                    f"(현재 {len(selected)}개). 나눠서 신청해 주세요.")
 
     return selected
 

@@ -258,8 +258,20 @@ input[type="file"] {
 .field-label { display: block; font-size: 0.85rem; color: var(--text-muted); font-weight: 600; margin-bottom: 6px; }
 
 /* 수업일 choices as clickable "chip" boxes -- a calendar-like date + 요일
-   box per valid date, instead of a plain <select> dropdown. */
-.date-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+   box per valid date, instead of a plain <select> dropdown. Multiple can
+   be checked at once; each gets its own 교시 selects right below it. */
+.date-chip-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.date-chip-block { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.date-chip-periods { display: flex; align-items: center; gap: 3px; font-size: 0.76rem; color: var(--text-muted); }
+.date-chip-periods select {
+  padding: 3px 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-size: 0.76rem;
+  background: var(--card);
+  font-family: inherit;
+}
+.date-chip-periods select:disabled { opacity: 0.4; }
 .date-chip {
   position: relative;
   display: flex;
@@ -276,7 +288,9 @@ input[type="file"] {
 }
 .date-chip input { position: absolute; opacity: 0; width: 0; height: 0; }
 .date-chip-weekday { font-size: 0.7rem; color: var(--text-muted); font-weight: 700; }
-.date-chip-date { font-size: 0.95rem; font-weight: 700; margin-top: 2px; }
+.date-chip-date { font-size: 0.95rem; font-weight: 700; margin-top: 2px; white-space: nowrap; }
+.date-chip.makeup .date-chip-date { font-size: 0.82rem; }
+.date-chip-arrow { color: var(--text-muted); font-weight: 400; }
 .date-chip:hover { border-color: var(--primary); }
 .date-chip:has(input:checked) {
   border-color: var(--primary);
@@ -286,9 +300,6 @@ input[type="file"] {
 .date-chip:active { transform: scale(0.96); }
 .date-chip.makeup { border-style: dashed; }
 .date-chip-badge {
-  position: absolute;
-  top: -8px;
-  right: -6px;
   background: var(--success);
   color: #fff;
   font-size: 0.62rem;
@@ -303,6 +314,7 @@ input[type="file"] {
 .confirm-summary dt { color: var(--text-muted); font-size: 0.82rem; }
 .confirm-summary dd { margin: 0; font-weight: 600; font-size: 0.9rem; }
 .confirm-actions { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.confirm-divider { border: none; border-top: 1px dashed #cfe9d7; margin: var(--space-2) 0; }
 
 .btn {
   display: inline-flex;

@@ -96,6 +96,7 @@ def valid_class_dates(slots, period_start, period_end, makeups=None):
                 "period_start": m["period_start"],
                 "period_end": m["period_end"],
                 "is_makeup": True,
+                "replaces": m["cancelled_date"],  # the 결강 date this makeup stands in for
             })
 
     dates.sort(key=lambda d: d["date"])

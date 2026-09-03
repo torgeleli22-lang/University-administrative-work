@@ -14,7 +14,7 @@
     <dt>성명</dt><dd>{{ student.name }}</dd>
     <dt>결석 사유</dt><dd>{{ reason_label }}</dd>
     <dt>결석 기간</dt><dd>{{ period_start }} ~ {{ period_end }}</dd>
-    <dt>총 신청 시간</dt><dd>{{ total_hours }}시간 ({{ selected|length }}개 과목)</dd>
+    <dt>총 신청 시간</dt><dd>{{ total_hours }}시간 ({{ selected|groupby('id')|list|length }}개 과목, {{ selected|length }}건)</dd>
   </dl>
 </section>
 
@@ -22,14 +22,18 @@
   뒤로 가서 다시 선택해 주세요.</p>
 
 <div class="course-grid">
-  {% for c in selected %}
+  {% for course_id, instances in selected|groupby('id') %}
   <div class="course-card confirm-card">
-    <h3>{{ c.course_name }} — {{ c.professor }} 교수</h3>
+    <h3>{{ instances[0].course_name }} — {{ instances[0].professor }} 교수</h3>
+    {% for c in instances %}
     <dl class="confirm-summary">
-      <dt>수업일</dt><dd>{{ c.class_day }}</dd>
+      <dt>수업일</dt><dd>{{ c.class_day }}{% if c.is_makeup %} <span class="badge ok">보강</span>{% endif %}</dd>
+      {% if c.is_makeup %}<dt>원래 수업일</dt><dd>{{ c.replaces_label }} (결강)</dd>{% endif %}
       <dt>수업시간</dt><dd>{{ c.class_time }} ({{ c.periods_missed }}시간)</dd>
       <dt>신청 후 누적</dt><dd>{{ c.used_hours + c.periods_missed }}시간</dd>
     </dl>
+    {% if not loop.last %}<hr class="confirm-divider">{% endif %}
+    {% endfor %}
   </div>
   {% endfor %}
 </div>
@@ -40,11 +44,13 @@
     <input type="hidden" name="reason_code" value="{{ reason_code }}">
     <input type="hidden" name="period_start" value="{{ period_start }}">
     <input type="hidden" name="period_end" value="{{ period_end }}">
-    {% for c in selected %}
-    <input type="hidden" name="course_ids" value="{{ c.id }}">
-    <input type="hidden" name="class_date_{{ c.id }}" value="{{ c.class_date_iso }}">
-    <input type="hidden" name="class_period_start_{{ c.id }}" value="{{ c.class_period_start }}">
-    <input type="hidden" name="class_period_end_{{ c.id }}" value="{{ c.class_period_end }}">
+    {% for course_id, instances in selected|groupby('id') %}
+    <input type="hidden" name="course_ids" value="{{ course_id }}">
+    {% for c in instances %}
+    <input type="hidden" name="class_dates_{{ course_id }}" value="{{ c.class_date_iso }}">
+    <input type="hidden" name="period_start_{{ course_id }}_{{ c.class_date_iso }}" value="{{ c.class_period_start }}">
+    <input type="hidden" name="period_end_{{ course_id }}_{{ c.class_date_iso }}" value="{{ c.class_period_end }}">
+    {% endfor %}
     {% endfor %}
     <button type="submit" class="btn primary">확인 및 등록 — 한글(.hwpx) 파일 다운로드</button>
   </form>

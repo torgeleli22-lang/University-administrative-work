@@ -25,23 +25,21 @@ window.App = (function () {
   }
 
   function hydrateDateSync(root) {
-    // Each 수업일 choice is a "chip" (a styled label wrapping a radio
-    // input) rather than a <select>; picking one still fills in the
-    // matching 시작/끝 교시 selects the same way the old dropdown did.
-    root.querySelectorAll(".date-chip-row").forEach(function (row) {
-      if (row.dataset.hydrated) return;
-      row.dataset.hydrated = "1";
-      var cid = row.dataset.course;
-      var startSel = root.querySelector("#class_period_start_" + cid);
-      var endSel = root.querySelector("#class_period_end_" + cid);
-      if (!startSel || !endSel) return;
+    // Each 수업일 choice is a checkbox "chip" with its own 시작/끝 교시
+    // selects right below it (multiple dates can be checked for one
+    // course at once). Unchecking a date just disables its period
+    // selects, both so they read as inactive and so their stale values
+    // don't get submitted as if that date were still picked.
+    root.querySelectorAll(".date-chip-block").forEach(function (block) {
+      if (block.dataset.hydrated) return;
+      block.dataset.hydrated = "1";
+      var checkbox = block.querySelector(".date-chip-check");
+      var selects = block.querySelectorAll(".date-chip-periods select");
+      if (!checkbox || !selects.length) return;
       function sync() {
-        var checked = row.querySelector("input:checked");
-        if (!checked) return;
-        startSel.value = checked.dataset.start;
-        endSel.value = checked.dataset.end;
+        selects.forEach(function (sel) { sel.disabled = !checkbox.checked; });
       }
-      row.addEventListener("change", sync);
+      checkbox.addEventListener("change", sync);
       sync();
     });
   }

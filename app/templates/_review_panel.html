@@ -38,32 +38,38 @@
       <input type="hidden" name="course_ids" value="{{ c.id }}">
 
       <div class="field-group">
-        <span class="field-label">수업일</span>
-        <div class="date-chip-row" data-course="{{ c.id }}">
+        <span class="field-label">수업일 (여러 날짜를 함께 선택할 수 있습니다)</span>
+        <div class="date-chip-row">
           {% for d in c.valid_dates %}
-          <label class="date-chip {{ 'makeup' if d.is_makeup }}">
-            <input type="radio" name="class_date_{{ c.id }}" value="{{ d.iso }}"
-              data-start="{{ d.period_start }}" data-end="{{ d.period_end }}"
-              {% if loop.first %}checked{% endif %}>
-            <span class="date-chip-weekday">{{ d.weekday }}요일</span>
-            <span class="date-chip-date">{{ d.month }}/{{ d.day }}</span>
-            {% if d.is_makeup %}<span class="date-chip-badge">보강</span>{% endif %}
-          </label>
+          <div class="date-chip-block">
+            <label class="date-chip {{ 'makeup' if d.is_makeup }}"
+              {% if d.is_makeup %}title="{{ d.month }}/{{ d.day }} 보강 수업 (원래 {{ d.replaces_label }} 수업 결강)"{% endif %}>
+              <input type="checkbox" name="class_dates_{{ c.id }}" value="{{ d.iso }}"
+                class="date-chip-check" {% if loop.first %}checked{% endif %}>
+              {% if d.is_makeup %}
+                <span class="date-chip-badge">보강</span>
+                <span class="date-chip-date">{{ d.month }}/{{ d.day }} <span class="date-chip-arrow">→</span> {{ d.replaces_label }}</span>
+              {% else %}
+                <span class="date-chip-weekday">{{ d.weekday }}요일</span>
+                <span class="date-chip-date">{{ d.month }}/{{ d.day }}</span>
+              {% endif %}
+            </label>
+            <div class="date-chip-periods">
+              <select name="period_start_{{ c.id }}_{{ d.iso }}">
+                {% for n in c.period_choices %}
+                <option value="{{ n }}" {% if n == d.period_start %}selected{% endif %}>{{ n }}교시</option>
+                {% endfor %}
+              </select>
+              ~
+              <select name="period_end_{{ c.id }}_{{ d.iso }}">
+                {% for n in c.period_choices %}
+                <option value="{{ n }}" {% if n == d.period_end %}selected{% endif %}>{{ n }}교시</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
           {% endfor %}
         </div>
-      </div>
-
-      <div class="row">
-        <label>시작 교시
-          <select name="class_period_start_{{ c.id }}" id="class_period_start_{{ c.id }}">
-            {% for n in c.period_choices %}<option value="{{ n }}">{{ n }}교시</option>{% endfor %}
-          </select>
-        </label>
-        <label>끝 교시
-          <select name="class_period_end_{{ c.id }}" id="class_period_end_{{ c.id }}">
-            {% for n in c.period_choices %}<option value="{{ n }}">{{ n }}교시</option>{% endfor %}
-          </select>
-        </label>
       </div>
     </div>
     {% endfor %}
