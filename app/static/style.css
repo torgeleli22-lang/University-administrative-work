@@ -284,12 +284,16 @@ fieldset label input:focus-visible, fieldset label select:focus-visible {
 }
 
 .admin-token-row {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
   margin: var(--space-3) 0 var(--space-4);
   font-size: 0.86rem;
   color: var(--text-muted);
   font-weight: 600;
 }
+.admin-token-row .hint { margin: 0; flex-basis: 100%; }
 
 .empty {
   color: var(--text-muted);

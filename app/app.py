@@ -323,6 +323,34 @@ def records_search():
     return render_template("_records_results.html", records=_search_records(q), q=q, reasons=REASON_LABELS)
 
 
+def _all_records():
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT p.id, p.created_at, s.student_number, s.name, s.grade, s.class_no,
+                  c.course_name, c.professor, p.reason_code,
+                  p.class_date, p.class_period_start, p.class_period_end, p.periods_missed
+           FROM permit_records p
+           JOIN students s ON s.id = p.student_id
+           JOIN courses c ON c.id = p.course_id
+           WHERE p.term = %s
+           ORDER BY p.created_at DESC""",
+        (TERM,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+@app.route("/records/admin_view", methods=["POST"])
+def records_admin_view():
+    """The 사용 기록 tab's 확인 button: entering the admin token here and
+    confirming it is what unlocks both the full (unfiltered) record list
+    and every delete button -- typing a token without confirming it does
+    neither, so viewing everyone's records and deleting both require the
+    same real server-side check, not just a non-empty text field."""
+    _check_admin_token()
+    return render_template("_records_results.html", records=_all_records(), q="", verified=True, reasons=REASON_LABELS)
+
+
 def _check_admin_token():
     expected = os.environ.get("ADMIN_TOKEN")
     if not expected:

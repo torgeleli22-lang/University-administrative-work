@@ -1,4 +1,4 @@
-{% if q %}
+{% if q or verified %}
   {% if records %}
   {% set student_numbers = records | map(attribute='student_number') | unique | list %}
   <div class="bulk-actions-row">
@@ -52,8 +52,9 @@
   </table>
   </div>
   {% else %}
-  <p class="empty">검색 결과가 없습니다.</p>
+  <p class="empty">{{ "조회된 기록이 없습니다." if verified else "검색 결과가 없습니다." }}</p>
   {% endif %}
 {% else %}
-  <p class="empty">학번 또는 이름을 입력해서 본인의 사용 기록을 조회하세요.</p>
+  <p class="empty">본인의 학번/이름으로 조회하거나, 관리자 토큰을 입력하고 확인을 누르면
+    전체 기록을 볼 수 있습니다.</p>
 {% endif %}

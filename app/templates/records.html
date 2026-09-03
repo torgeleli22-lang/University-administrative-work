@@ -10,8 +10,13 @@
 
 <form method="post" action="{{ url_for('records_delete') }}" id="records-delete-form">
   <input type="hidden" name="q" id="records-q-hidden" value="{{ q }}">
-  <label class="admin-token-row">관리자 토큰 (먼저 입력해야 삭제 버튼이 활성화됩니다)
-    <input type="password" name="admin_token" class="js-admin-token" autocomplete="off"></label>
+  <input type="hidden" class="js-admin-verified" id="records-verified" value="">
+  <div class="admin-token-row">
+    <label>관리자 토큰
+      <input type="password" name="admin_token" id="records-admin-token" class="js-admin-token" autocomplete="off"></label>
+    <button type="button" id="records-admin-confirm" class="btn">확인</button>
+    <span class="hint">토큰을 입력하고 확인을 누르면 전체 기록 조회와 삭제가 가능합니다.</span>
+  </div>
 
   <div id="record-results">
     {% include "_records_results.html" %}
@@ -50,6 +55,51 @@
       e.preventDefault();
       clearTimeout(timer);
       runSearch();
+    });
+  })();
+
+  // 관리자 토큰을 입력하고 "확인"을 누르면 서버에 실제로 검증한 뒤 전체
+  // 기록을 보여주고, 그 결과로만 삭제 버튼들이 활성화된다 (App.applyAdminGate,
+  // app.js). 토큰을 다시 고치면 재확인 전까지 다시 잠긴다.
+  (function () {
+    var tokenInput = document.getElementById("records-admin-token");
+    var confirmBtn = document.getElementById("records-admin-confirm");
+    var verifiedFlag = document.getElementById("records-verified");
+    var results = document.getElementById("record-results");
+    var searchInput = document.getElementById("records-search-input");
+
+    confirmBtn.addEventListener("click", function () {
+      var token = tokenInput.value.trim();
+      if (!token) {
+        alert("관리자 토큰을 입력해 주세요.");
+        return;
+      }
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "확인 중...";
+      fetch("/records/admin_view", {
+        method: "POST",
+        body: new URLSearchParams({ admin_token: token }),
+      })
+        .then(function (res) {
+          if (!res.ok) throw new Error("unauthorized");
+          return res.text();
+        })
+        .then(function (html) {
+          verifiedFlag.value = "1";
+          results.innerHTML = html;
+          App.hydrateAll(results);
+          searchInput.value = "";
+          history.replaceState(null, "", "/records");
+        })
+        .catch(function () {
+          verifiedFlag.value = "";
+          App.hydrateAll(results);
+          alert("관리자 토큰이 올바르지 않습니다.");
+        })
+        .then(function () {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = "확인";
+        });
     });
   })();
 </script>

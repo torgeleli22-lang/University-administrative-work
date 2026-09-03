@@ -56,17 +56,18 @@ window.App = (function () {
     });
   }
 
-  // Delete buttons stay disabled until an admin token is typed in, so
-  // deleting always proceeds in the order "enter token, then delete" --
-  // .js-admin-token is the token input, .js-admin-gated the buttons it
-  // gates (row/bulk/per-student delete), both scoped to the same form.
+  // Delete buttons (and the full-list view) stay locked until the admin
+  // token has actually been checked against the server -- .js-admin-token
+  // is the token input, .js-admin-verified a hidden flag flipped to "1"
+  // only by a successful /records/admin_view confirm, .js-admin-gated the
+  // buttons it gates (row/bulk/per-student delete). Editing the token
+  // after confirming un-verifies it, so a stale token can't stay "trusted".
   function applyAdminGate(scopeEl) {
     var doc = scopeEl.ownerDocument || document;
-    var tokenInput = doc.querySelector(".js-admin-token");
-    if (!tokenInput) return;
-    var hasToken = tokenInput.value.trim().length > 0;
+    var verifiedInput = doc.querySelector(".js-admin-verified");
+    var verified = !!verifiedInput && verifiedInput.value === "1";
     scopeEl.querySelectorAll(".js-admin-gated").forEach(function (btn) {
-      btn.disabled = !hasToken;
+      btn.disabled = !verified;
     });
   }
 
@@ -74,7 +75,12 @@ window.App = (function () {
     root.querySelectorAll(".js-admin-token").forEach(function (input) {
       if (input.dataset.hydrated) return;
       input.dataset.hydrated = "1";
-      input.addEventListener("input", function () { applyAdminGate(document); });
+      input.addEventListener("input", function () {
+        var doc = input.ownerDocument;
+        var verifiedInput = doc.querySelector(".js-admin-verified");
+        if (verifiedInput) verifiedInput.value = "";
+        applyAdminGate(doc);
+      });
     });
     applyAdminGate(root);
   }
