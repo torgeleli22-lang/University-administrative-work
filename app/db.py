@@ -39,6 +39,9 @@ SCHEMA = [
     )
     """,
     # A course can meet more than once a week; each meeting is one slot.
+    # UNIQUE on the identifying columns makes re-importing the same
+    # timetable idempotent (ON CONFLICT DO NOTHING in load_timetable)
+    # instead of silently doubling up every slot on every re-upload.
     """
     CREATE TABLE IF NOT EXISTS course_slots (
         id SERIAL PRIMARY KEY,
@@ -47,7 +50,8 @@ SCHEMA = [
         period_start INTEGER NOT NULL,
         period_end INTEGER NOT NULL,
         building TEXT,
-        room TEXT
+        room TEXT,
+        UNIQUE (course_id, day, period_start, period_end)
     )
     """,
     # Audit log: one row per course covered by a generated permit, recording
@@ -85,6 +89,17 @@ MIGRATIONS = [
     # 강의계획서 is no longer used as a data source.
     "ALTER TABLE courses DROP COLUMN IF EXISTS course_code",
     "ALTER TABLE courses DROP COLUMN IF EXISTS credits",
+    # course_slots had no uniqueness guard before this, so re-uploading the
+    # same timetable duplicated every slot (visible as "월, 월" / "6~8교시,
+    # 6~8교시" doubled up in the course list). Drop the extras (keep the
+    # lowest id per group) before adding the index that prevents new ones.
+    """
+    DELETE FROM course_slots a USING course_slots b
+    WHERE a.id > b.id AND a.course_id = b.course_id AND a.day = b.day
+      AND a.period_start = b.period_start AND a.period_end = b.period_end
+    """,
+    "CREATE UNIQUE INDEX IF NOT EXISTS course_slots_unique_idx "
+    "ON course_slots (course_id, day, period_start, period_end)",
 ]
 
 

@@ -9,7 +9,7 @@ from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, PERIOD_CHOICES, TERM
 from app.db import get_conn, init_db
 from app.hwpx_filler import MAX_COURSES, REASON_LABELS, PermitRequest, generate_hwpx
 from app.import_real_data import load_roster, load_timetable, parse_roster, parse_timetable
-from app.queries import get_course_used_hours, get_student_courses, get_valid_class_dates
+from app.queries import get_slots_by_course, get_student_courses, get_used_hours_by_course, valid_class_dates
 from app.seed import seed as seed_dummy_data
 
 TEMPLATE_HWPX = Path(__file__).resolve().parent / "assets" / "attendance_permit_template.hwpx"
@@ -26,19 +26,31 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # xls uploads are small; 20
 init_db()
 
 
+def _search_students(q):
+    if not q:
+        return []
+    conn = get_conn()
+    students = conn.execute(
+        """SELECT * FROM students WHERE term=%s AND (student_number LIKE %s OR name LIKE %s)
+           ORDER BY grade, class_no, student_number""",
+        (TERM, f"%{q}%", f"%{q}%"),
+    ).fetchall()
+    conn.close()
+    return students
+
+
 @app.route("/")
 def index():
     q = request.args.get("q", "").strip()
-    students = []
-    if q:
-        conn = get_conn()
-        students = conn.execute(
-            """SELECT * FROM students WHERE term=%s AND (student_number LIKE %s OR name LIKE %s)
-               ORDER BY grade, class_no, student_number""",
-            (TERM, f"%{q}%", f"%{q}%"),
-        ).fetchall()
-        conn.close()
-    return render_template("index.html", students=students, q=q, term=TERM)
+    return render_template("index.html", students=_search_students(q), q=q, term=TERM)
+
+
+@app.route("/students/search")
+def students_search():
+    """Partial-page endpoint the search box fetches into, so typing doesn't
+    reload the whole page -- just the #results div."""
+    q = request.args.get("q", "").strip()
+    return render_template("_student_results.html", students=_search_students(q), q=q)
 
 
 @app.route("/student/<int:student_id>")
@@ -98,18 +110,20 @@ def review(student_id):
         abort(400, f"결석 과목은 최대 {MAX_COURSES}개까지 선택할 수 있습니다.")
 
     available = {c["id"]: c for c in get_student_courses(conn, student)}
+    slots_by_course = get_slots_by_course(conn, course_ids)
+    conn.close()
+
     reviewable = []
     blocked = []
     for cid in course_ids:
         course = available.get(cid)
         if course is None:
-            conn.close()
             abort(400, "선택한 과목을 찾을 수 없습니다.")
         if course["at_limit"]:
             blocked.append(f"{course['course_name']} — 이번 학기 누적 {course['used_hours']}시간으로 "
                             f"이미 한도({MAX_ABSENCE_PERIODS_PER_COURSE}시간)에 도달해 신청할 수 없습니다.")
             continue
-        valid_dates = get_valid_class_dates(conn, cid, period_start, period_end)
+        valid_dates = valid_class_dates(slots_by_course[cid], period_start, period_end)
         if not valid_dates:
             blocked.append(f"{course['course_name']} — 선택하신 기간에는 이 수업이 없습니다.")
             continue
@@ -123,7 +137,6 @@ def review(student_id):
             ],
             "period_choices": PERIOD_CHOICES,
         })
-    conn.close()
 
     return render_template(
         "review.html",
@@ -157,6 +170,9 @@ def generate(student_id):
         abort(400, f"결석 과목은 최대 {MAX_COURSES}개까지 선택할 수 있습니다.")
 
     available = {c["id"]: c for c in get_student_courses(conn, student)}
+    slots_by_course = get_slots_by_course(conn, course_ids)
+    used_by_course = get_used_hours_by_course(conn, student_id, course_ids, TERM)
+
     selected = []
     for cid in course_ids:
         course = available.get(cid)
@@ -171,7 +187,7 @@ def generate(student_id):
             conn.close()
             abort(400, f"'{course['course_name']}' 과목의 수업일을 선택해 주세요.")
 
-        valid_dates = {d["date"] for d in get_valid_class_dates(conn, cid, period_start, period_end)}
+        valid_dates = {d["date"] for d in valid_class_dates(slots_by_course[cid], period_start, period_end)}
         if class_date not in valid_dates:
             conn.close()
             abort(400, f"'{course['course_name']}' 과목은 {class_date.month}/{class_date.day}에 "
@@ -188,7 +204,7 @@ def generate(student_id):
             abort(400, f"'{course['course_name']}' 과목의 시작 교시는 끝 교시보다 늦을 수 없습니다.")
 
         periods_missed = class_period_end - class_period_start + 1
-        used_hours = get_course_used_hours(conn, student_id, cid, TERM)
+        used_hours = used_by_course[cid]
         if used_hours + periods_missed > MAX_ABSENCE_PERIODS_PER_COURSE:
             conn.close()
             remaining = max(0, MAX_ABSENCE_PERIODS_PER_COURSE - used_hours)

@@ -1,0 +1,32 @@
+{% if q %}
+  {% if students %}
+  <table class="student-table">
+    <thead>
+      <tr>
+        <th>학번</th>
+        <th>성명</th>
+        <th>학과</th>
+        <th>학년</th>
+        <th>반</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in students %}
+      <tr>
+        <td>{{ s.student_number }}</td>
+        <td>{{ s.name }}</td>
+        <td>{{ s.department }}</td>
+        <td>{{ s.grade }}</td>
+        <td>{{ s.class_no }}</td>
+        <td><a class="btn" href="{{ url_for('student_form', student_id=s.id) }}">허가원 작성</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">검색 결과가 없습니다.</p>
+  {% endif %}
+{% else %}
+  <p class="empty">학번 또는 이름을 입력해서 학생을 검색하세요.</p>
+{% endif %}

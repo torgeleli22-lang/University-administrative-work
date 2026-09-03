@@ -1,4 +1,9 @@
-"""Read helpers shared by the Flask routes."""
+"""Read helpers shared by the Flask routes.
+
+Neon is a remote DB, so every query is a network round trip -- these are
+written to fetch in bulk (one query for N courses) rather than looping a
+query per course, which is what made student/review pages slow before.
+"""
 from datetime import timedelta
 
 from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, TERM, WEEKDAY_ORDER
@@ -19,22 +24,29 @@ def format_schedule(slots):
     return days, times
 
 
-def get_course_slots(conn, course_id):
-    """This course's weekly meeting slots, sorted 월->일, earliest period
-    first."""
-    slots = conn.execute(
-        "SELECT day, period_start, period_end FROM course_slots WHERE course_id=%s",
-        (course_id,),
+def get_slots_by_course(conn, course_ids):
+    """{course_id: [slot, ...]} for every id in course_ids, in one query."""
+    course_ids = list(course_ids)
+    by_course = {cid: [] for cid in course_ids}
+    if not course_ids:
+        return by_course
+    rows = conn.execute(
+        """SELECT course_id, day, period_start, period_end FROM course_slots
+           WHERE course_id = ANY(%s)""",
+        (course_ids,),
     ).fetchall()
-    return sorted(slots, key=lambda s: (WEEKDAY_ORDER.index(s["day"]), s["period_start"]))
+    for r in rows:
+        by_course[r["course_id"]].append(r)
+    for cid in by_course:
+        by_course[cid].sort(key=lambda s: (WEEKDAY_ORDER.index(s["day"]), s["period_start"]))
+    return by_course
 
 
-def get_valid_class_dates(conn, course_id, period_start, period_end):
+def valid_class_dates(slots, period_start, period_end):
     """Every calendar date in [period_start, period_end] that lands on one
     of this course's weekly meeting days, each paired with that slot's
     period range -- the choices for "수업일" on the review step. Earliest
     date first (so 결석 시작일, or the closest date to it, is the default)."""
-    slots = get_course_slots(conn, course_id)
     if not slots:
         return []
     slot_by_day = {}
@@ -55,33 +67,43 @@ def get_valid_class_dates(conn, course_id, period_start, period_end):
     return dates
 
 
-def get_course_used_hours(conn, student_id, course_id, term=TERM):
-    """Sum of 교시 hours already recorded for this student+course across
-    every 출석인정허가원 issued this term (permit_records), used to cap the
-    cumulative total under MAX_ABSENCE_PERIODS_PER_COURSE."""
-    row = conn.execute(
-        """SELECT COALESCE(SUM(periods_missed), 0) AS total FROM permit_records
-           WHERE term=%s AND student_id=%s AND course_id=%s""",
-        (term, student_id, course_id),
-    ).fetchone()
-    return row["total"]
+def get_used_hours_by_course(conn, student_id, course_ids, term=TERM):
+    """{course_id: cumulative 교시 hours already on file} for every id in
+    course_ids, in one query."""
+    course_ids = list(course_ids)
+    used = {cid: 0 for cid in course_ids}
+    if not course_ids:
+        return used
+    rows = conn.execute(
+        """SELECT course_id, COALESCE(SUM(periods_missed), 0) AS total FROM permit_records
+           WHERE term=%s AND student_id=%s AND course_id = ANY(%s)
+           GROUP BY course_id""",
+        (term, student_id, course_ids),
+    ).fetchall()
+    for r in rows:
+        used[r["course_id"]] = r["total"]
+    return used
 
 
 def get_student_courses(conn, student, term=TERM):
     """Courses offered to this student's (grade, section) this term, each
     annotated with cumulative hours already used and hours still available
-    before hitting the 12시간 cap."""
+    before hitting the 12시간 cap. Three queries total, regardless of how
+    many courses the student has."""
     rows = conn.execute(
         """SELECT * FROM courses WHERE term=%s AND grade=%s AND section=%s
            ORDER BY course_name""",
         (term, student["grade"], student["class_no"]),
     ).fetchall()
 
+    course_ids = [c["id"] for c in rows]
+    slots_by_course = get_slots_by_course(conn, course_ids)
+    used_by_course = get_used_hours_by_course(conn, student["id"], course_ids, term)
+
     courses = []
     for c in rows:
-        slots = get_course_slots(conn, c["id"])
-        class_day, class_time = format_schedule(slots)
-        used_hours = get_course_used_hours(conn, student["id"], c["id"], term)
+        class_day, class_time = format_schedule(slots_by_course[c["id"]])
+        used_hours = used_by_course[c["id"]]
         remaining = max(0, MAX_ABSENCE_PERIODS_PER_COURSE - used_hours)
         courses.append({
             "id": c["id"],

@@ -223,9 +223,13 @@ def load_timetable(conn, slots, term):
             )
             course_ids[key] = cur.fetchone()["id"]
 
+    # ON CONFLICT here (course_slots_unique_idx, see db.py) makes re-running
+    # the same timetable import a no-op instead of doubling up every slot.
     cur.executemany(
         """INSERT INTO course_slots (course_id, day, period_start, period_end, building, room)
-           VALUES (%s, %s, %s, %s, %s, %s)""",
+           VALUES (%s, %s, %s, %s, %s, %s)
+           ON CONFLICT (course_id, day, period_start, period_end)
+           DO UPDATE SET building = excluded.building, room = excluded.room""",
         [
             (course_ids[(s["grade"], s["section"], s["course_name"], s["professor"])],
              s["day"], s["period_start"], s["period_end"], s["building"], s["room"])

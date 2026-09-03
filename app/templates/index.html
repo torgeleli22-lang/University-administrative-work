@@ -1,41 +1,47 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>출석인정허가원 작성</h1>
-<form method="get" class="search-bar">
-  <input type="text" name="q" placeholder="학번 또는 이름으로 검색" value="{{ q }}" autofocus>
+<form method="get" class="search-bar" id="search-form">
+  <input type="text" name="q" id="search-input" placeholder="학번 또는 이름으로 검색" value="{{ q }}" autofocus autocomplete="off">
   <button type="submit">검색</button>
 </form>
 
-{% if q %}
-  {% if students %}
-  <table class="student-table">
-    <thead>
-      <tr>
-        <th>학번</th>
-        <th>성명</th>
-        <th>학과</th>
-        <th>학년</th>
-        <th>반</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for s in students %}
-      <tr>
-        <td>{{ s.student_number }}</td>
-        <td>{{ s.name }}</td>
-        <td>{{ s.department }}</td>
-        <td>{{ s.grade }}</td>
-        <td>{{ s.class_no }}</td>
-        <td><a class="btn" href="{{ url_for('student_form', student_id=s.id) }}">허가원 작성</a></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="empty">검색 결과가 없습니다.</p>
-  {% endif %}
-{% else %}
-  <p class="empty">학번 또는 이름을 입력해서 학생을 검색하세요.</p>
-{% endif %}
+<div id="results">
+  {% include "_student_results.html" %}
+</div>
+
+<script>
+  // 입력할 때마다 페이지 전체를 새로고침하지 않고, 결과 부분(#results)만
+  // fetch로 새로 받아와서 갈아끼운다. 자바스크립트가 꺼져 있어도 폼 자체가
+  // 평소처럼 GET으로 제출되니 검색은 그대로 동작한다.
+  (function () {
+    var input = document.getElementById("search-input");
+    var results = document.getElementById("results");
+    var form = document.getElementById("search-form");
+    var timer = null;
+
+    function runSearch() {
+      var q = input.value.trim();
+      var url = "/students/search?q=" + encodeURIComponent(q);
+      fetch(url)
+        .then(function (res) { return res.text(); })
+        .then(function (html) {
+          results.innerHTML = html;
+          var newUrl = q ? "/?q=" + encodeURIComponent(q) : "/";
+          history.replaceState(null, "", newUrl);
+        });
+    }
+
+    input.addEventListener("input", function () {
+      clearTimeout(timer);
+      timer = setTimeout(runSearch, 250);
+    });
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      clearTimeout(timer);
+      runSearch();
+    });
+  })();
+</script>
 {% endblock %}
