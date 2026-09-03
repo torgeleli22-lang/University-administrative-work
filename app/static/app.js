@@ -56,10 +56,48 @@ window.App = (function () {
     });
   }
 
+  // Delete buttons stay disabled until an admin token is typed in, so
+  // deleting always proceeds in the order "enter token, then delete" --
+  // .js-admin-token is the token input, .js-admin-gated the buttons it
+  // gates (row/bulk/per-student delete), both scoped to the same form.
+  function applyAdminGate(scopeEl) {
+    var doc = scopeEl.ownerDocument || document;
+    var tokenInput = doc.querySelector(".js-admin-token");
+    if (!tokenInput) return;
+    var hasToken = tokenInput.value.trim().length > 0;
+    scopeEl.querySelectorAll(".js-admin-gated").forEach(function (btn) {
+      btn.disabled = !hasToken;
+    });
+  }
+
+  function hydrateAdminGate(root) {
+    root.querySelectorAll(".js-admin-token").forEach(function (input) {
+      if (input.dataset.hydrated) return;
+      input.dataset.hydrated = "1";
+      input.addEventListener("input", function () { applyAdminGate(document); });
+    });
+    applyAdminGate(root);
+  }
+
+  function hydrateSelectAll(root) {
+    root.querySelectorAll(".js-select-all").forEach(function (master) {
+      if (master.dataset.hydrated) return;
+      master.dataset.hydrated = "1";
+      master.addEventListener("change", function () {
+        var scope = master.closest("form") || document;
+        scope.querySelectorAll(".js-row-check").forEach(function (cb) {
+          cb.checked = master.checked;
+        });
+      });
+    });
+  }
+
   function hydrateAll(root) {
     hydratePeriodSync(root);
     hydrateDateSync(root);
     hydrateSubmitGuard(root);
+    hydrateAdminGate(root);
+    hydrateSelectAll(root);
   }
 
   function showPanel(el) {

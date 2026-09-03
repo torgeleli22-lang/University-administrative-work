@@ -2,7 +2,9 @@
 {% block content %}
 <h1>학사 데이터 가져오기 (관리자)</h1>
 <p class="hint">학교에서 받은 .xls 파일을 그대로 선택해서 올리면 됩니다. 컴퓨터에
-설치할 건 없고, 파일은 서버에 저장되지 않고 바로 DB에만 반영됩니다.</p>
+설치할 건 없고, 파일은 서버에 저장되지 않고 바로 DB에만 반영됩니다. 아래
+드롭다운에서 고른 파일 종류의 데이터만 갱신되고, 나머지 데이터는 그대로
+유지됩니다.</p>
 
 {% if result %}
 <fieldset>
@@ -21,22 +23,32 @@
   </fieldset>
 
   <fieldset>
-    <legend>재학생명단 (전체 학년, 1개)</legend>
-    <input type="file" name="roster" accept=".xls">
+    <legend>업로드할 파일</legend>
+    <label>파일 종류
+      <select name="file_type" id="file-type-select" required>
+        <option value="" disabled selected>선택하세요</option>
+        <option value="roster">재학생명단</option>
+        <option value="timetable">학과별 시간표</option>
+        <option value="makeup">보강결과보고서 (수업일 변동)</option>
+      </select>
+    </label>
+    <label id="grade-select-row" hidden>학년
+      <select name="grade" id="grade-select">
+        <option value="1">1학년</option>
+        <option value="2">2학년</option>
+        <option value="3">3학년</option>
+        <option value="4">4학년</option>
+      </select>
+    </label>
+    <p class="hint" id="file-type-hint"></p>
+    <label>파일 <input type="file" name="file" accept=".xls" required></label>
   </fieldset>
 
-  <fieldset>
-    <legend>학과별 전체시간표 (학년별로 각각)</legend>
-    <label>1학년 <input type="file" name="timetable_1" accept=".xls"></label><br>
-    <label>2학년 <input type="file" name="timetable_2" accept=".xls"></label><br>
-    <label>3학년 <input type="file" name="timetable_3" accept=".xls"></label><br>
-    <label>4학년 <input type="file" name="timetable_4" accept=".xls"></label>
-  </fieldset>
-
-  <p class="hint">필요한 파일만 골라서 올리면 됩니다 (예: 시간표만 새로 나왔으면
-  시간표만 선택). 시간표만으로 과목명·담당교수·교시가 다 나오기 때문에
-  강의계획서 파일은 필요 없습니다. 재학생명단을 올리면 같은 학기의 기존
-  학생 목록은 새 명단으로 통째로 교체됩니다.</p>
+  <p class="hint">재학생명단을 올리면 같은 학기의 기존 학생 목록은 새 명단으로
+  통째로 교체됩니다. 시간표만으로 과목명·담당교수·교시가 다 나오기 때문에
+  강의계획서 파일은 필요 없습니다. 보강결과보고서는 결강/보강으로 바뀐
+  수업일을 반영해 결석 과목 선택 화면의 "수업일" 목록에 자동 반영되며, 해당
+  과목의 학과별 시간표를 먼저 올려둬야 정확히 매칭됩니다.</p>
 
   <button type="submit" class="btn primary">업로드 및 반영</button>
 </form>
@@ -50,4 +62,26 @@
     <button type="submit" class="btn">데모 데이터 넣기</button>
   </form>
 </fieldset>
+
+<script>
+  (function () {
+    var typeSelect = document.getElementById("file-type-select");
+    var gradeRow = document.getElementById("grade-select-row");
+    var hint = document.getElementById("file-type-hint");
+    var hints = {
+      roster: "전체 학년이 한 파일에 들어있는 재학생명단 .xls를 선택하세요.",
+      timetable: "학년별로 따로 내려받은 학과별 전체시간표 .xls를 선택하고, 위에서 학년도 골라주세요.",
+      makeup: "보강결과보고서 .xls를 선택하세요 (결강일/보강일 열 포함)."
+    };
+
+    function sync() {
+      var type = typeSelect.value;
+      gradeRow.hidden = type !== "timetable";
+      hint.textContent = hints[type] || "";
+    }
+
+    typeSelect.addEventListener("change", sync);
+    sync();
+  })();
+</script>
 {% endblock %}

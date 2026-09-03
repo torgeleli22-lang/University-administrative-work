@@ -74,6 +74,23 @@ SCHEMA = [
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
     """,
+    # 보강(makeup class) overrides from the 보강결과보고서 upload: on
+    # cancelled_date the course's normal weekly slot didn't actually meet
+    # (결강), and it met instead on makeup_date/period range (which may
+    # fall on a different weekday than the course's usual schedule). Used
+    # to correct the "수업일" choices offered in the review step.
+    """
+    CREATE TABLE IF NOT EXISTS course_makeups (
+        id SERIAL PRIMARY KEY,
+        course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        cancelled_date DATE NOT NULL,
+        makeup_date DATE NOT NULL,
+        period_start INTEGER NOT NULL,
+        period_end INTEGER NOT NULL,
+        reason TEXT,
+        UNIQUE (course_id, cancelled_date, makeup_date)
+    )
+    """,
 ]
 
 # CREATE TABLE IF NOT EXISTS only helps on a brand-new database -- it's a

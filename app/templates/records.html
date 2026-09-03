@@ -10,7 +10,8 @@
 
 <form method="post" action="{{ url_for('records_delete') }}" id="records-delete-form">
   <input type="hidden" name="q" id="records-q-hidden" value="{{ q }}">
-  <label class="admin-token-row">관리자 토큰 (삭제할 때만 필요) <input type="password" name="admin_token" autocomplete="off"></label>
+  <label class="admin-token-row">관리자 토큰 (먼저 입력해야 삭제 버튼이 활성화됩니다)
+    <input type="password" name="admin_token" class="js-admin-token" autocomplete="off"></label>
 
   <div id="record-results">
     {% include "_records_results.html" %}
@@ -34,6 +35,7 @@
         .then(function (html) {
           results.innerHTML = html;
           qHidden.value = q;
+          App.hydrateAll(results);
           var newUrl = q ? "/records?q=" + encodeURIComponent(q) : "/records";
           history.replaceState(null, "", newUrl);
         });

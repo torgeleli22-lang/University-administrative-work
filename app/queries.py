@@ -6,7 +6,7 @@ query per course, which is what made student/review pages slow before.
 """
 from datetime import timedelta
 
-from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, TERM, WEEKDAY_ORDER
+from app.config import ELECTIVE_COURSE_NAMES, MAX_ABSENCE_PERIODS_PER_COURSE, TERM, WEEKDAY_ORDER
 
 
 def format_schedule(slots):
@@ -42,28 +42,63 @@ def get_slots_by_course(conn, course_ids):
     return by_course
 
 
-def valid_class_dates(slots, period_start, period_end):
+def get_makeups_by_course(conn, course_ids):
+    """{course_id: [makeup, ...]} for every id in course_ids, in one query
+    -- 결강/보강 overrides from the 보강결과보고서 upload."""
+    course_ids = list(course_ids)
+    by_course = {cid: [] for cid in course_ids}
+    if not course_ids:
+        return by_course
+    rows = conn.execute(
+        """SELECT course_id, cancelled_date, makeup_date, period_start, period_end
+           FROM course_makeups WHERE course_id = ANY(%s)""",
+        (course_ids,),
+    ).fetchall()
+    for r in rows:
+        by_course[r["course_id"]].append(r)
+    return by_course
+
+
+def valid_class_dates(slots, period_start, period_end, makeups=None):
     """Every calendar date in [period_start, period_end] that lands on one
     of this course's weekly meeting days, each paired with that slot's
-    period range -- the choices for "수업일" on the review step. Earliest
-    date first (so 결석 시작일, or the closest date to it, is the default)."""
-    if not slots:
-        return []
+    period range -- the choices for "수업일" on the review step. 보강
+    (makeup) overrides are applied on top: a date the course was 결강
+    (cancelled) on is dropped even if it's a normal meeting day, and each
+    보강일 (makeup date) is added even if it falls on a day the course
+    doesn't normally meet. Earliest date first (so 결석 시작일, or the
+    closest date to it, is the default)."""
+    makeups = makeups or []
+    cancelled_dates = {m["cancelled_date"] for m in makeups}
+
     slot_by_day = {}
-    for s in slots:
+    for s in slots or []:
         slot_by_day.setdefault(s["day"], s)  # first slot wins if a day repeats
 
     dates = []
-    day = period_start
-    while day <= period_end:
-        slot = slot_by_day.get(WEEKDAY_ORDER[day.weekday()])
-        if slot is not None:
+    if slots:
+        day = period_start
+        while day <= period_end:
+            slot = slot_by_day.get(WEEKDAY_ORDER[day.weekday()])
+            if slot is not None and day not in cancelled_dates:
+                dates.append({
+                    "date": day,
+                    "period_start": slot["period_start"],
+                    "period_end": slot["period_end"],
+                    "is_makeup": False,
+                })
+            day += timedelta(days=1)
+
+    for m in makeups:
+        if period_start <= m["makeup_date"] <= period_end:
             dates.append({
-                "date": day,
-                "period_start": slot["period_start"],
-                "period_end": slot["period_end"],
+                "date": m["makeup_date"],
+                "period_start": m["period_start"],
+                "period_end": m["period_end"],
+                "is_makeup": True,
             })
-        day += timedelta(days=1)
+
+    dates.sort(key=lambda d: d["date"])
     return dates
 
 
@@ -102,14 +137,17 @@ def get_student_permit_records(conn, student_id, term=TERM):
 
 
 def get_student_courses(conn, student, term=TERM):
-    """Courses offered to this student's (grade, section) this term, each
-    annotated with cumulative hours already used and hours still available
-    before hitting the 12시간 cap. Three queries total, regardless of how
-    many courses the student has."""
+    """Courses offered to this student's (grade, section) this term, plus
+    every ELECTIVE_COURSE_NAMES offering in their grade regardless of
+    section (see config.py -- those 분반 letters are elective groups, not
+    the student's homeroom), each annotated with cumulative hours already
+    used and hours still available before hitting the 12시간 cap. Three
+    queries total, regardless of how many courses the student has."""
     rows = conn.execute(
-        """SELECT * FROM courses WHERE term=%s AND grade=%s AND section=%s
+        """SELECT * FROM courses WHERE term=%s AND grade=%s
+           AND (section=%s OR course_name = ANY(%s))
            ORDER BY course_name""",
-        (term, student["grade"], student["class_no"]),
+        (term, student["grade"], student["class_no"], list(ELECTIVE_COURSE_NAMES)),
     ).fetchall()
 
     course_ids = [c["id"] for c in rows]

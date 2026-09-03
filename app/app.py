@@ -8,8 +8,16 @@ from flask import Flask, abort, redirect, render_template, request, send_file, u
 from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, PERIOD_CHOICES, TERM
 from app.db import get_conn, init_db
 from app.hwpx_filler import MAX_COURSES, REASON_LABELS, PermitRequest, generate_hwpx
-from app.import_real_data import load_roster, load_timetable, parse_roster, parse_timetable
+from app.import_real_data import (
+    load_course_makeups,
+    load_roster,
+    load_timetable,
+    parse_makeup_report,
+    parse_roster,
+    parse_timetable,
+)
 from app.queries import (
+    get_makeups_by_course,
     get_slots_by_course,
     get_student_courses,
     get_student_permit_records,
@@ -128,6 +136,7 @@ def review(student_id):
 
     available = {c["id"]: c for c in get_student_courses(conn, student)}
     slots_by_course = get_slots_by_course(conn, course_ids)
+    makeups_by_course = get_makeups_by_course(conn, course_ids)
     conn.close()
 
     reviewable = []
@@ -140,7 +149,7 @@ def review(student_id):
             blocked.append(f"{course['course_name']} — 이번 학기 누적 {course['used_hours']}시간으로 "
                             f"이미 한도({MAX_ABSENCE_PERIODS_PER_COURSE}시간)에 도달해 신청할 수 없습니다.")
             continue
-        valid_dates = valid_class_dates(slots_by_course[cid], period_start, period_end)
+        valid_dates = valid_class_dates(slots_by_course[cid], period_start, period_end, makeups_by_course[cid])
         if not valid_dates:
             blocked.append(f"{course['course_name']} — 선택하신 기간에는 이 수업이 없습니다.")
             continue
@@ -148,7 +157,8 @@ def review(student_id):
             **course,
             "valid_dates": [
                 {"iso": d["date"].isoformat(),
-                 "label": f"{d['date'].month}/{d['date'].day} ({'월화수목금토일'[d['date'].weekday()]})",
+                 "label": (f"{d['date'].month}/{d['date'].day} ({'월화수목금토일'[d['date'].weekday()]}"
+                           f"{'·보강' if d['is_makeup'] else ''})"),
                  "period_start": d["period_start"], "period_end": d["period_end"]}
                 for d in valid_dates
             ],
@@ -188,6 +198,7 @@ def generate(student_id):
 
     available = {c["id"]: c for c in get_student_courses(conn, student)}
     slots_by_course = get_slots_by_course(conn, course_ids)
+    makeups_by_course = get_makeups_by_course(conn, course_ids)
     used_by_course = get_used_hours_by_course(conn, student_id, course_ids, TERM)
 
     selected = []
@@ -204,7 +215,8 @@ def generate(student_id):
             conn.close()
             abort(400, f"'{course['course_name']}' 과목의 수업일을 선택해 주세요.")
 
-        valid_dates = {d["date"] for d in valid_class_dates(slots_by_course[cid], period_start, period_end)}
+        valid_dates = {d["date"] for d in valid_class_dates(
+            slots_by_course[cid], period_start, period_end, makeups_by_course[cid])}
         if class_date not in valid_dates:
             conn.close()
             abort(400, f"'{course['course_name']}' 과목은 {class_date.month}/{class_date.day}에 "
@@ -322,10 +334,29 @@ def _check_admin_token():
 
 @app.route("/records/delete", methods=["POST"])
 def records_delete():
+    """Three ways to delete, all admin-token gated: a single row
+    (delete_id, the per-row button), several checked rows at once
+    (record_ids, the 선택 삭제 button), or every record on file for one
+    student this term (delete_student_number, the 이 학생 전체 기록 삭제
+    button that appears once a search matches exactly one student)."""
     _check_admin_token()
-    record_id = request.form.get("delete_id")
     conn = get_conn()
-    conn.execute("DELETE FROM permit_records WHERE id=%s", (record_id,))
+
+    student_number = request.form.get("delete_student_number", "").strip()
+    record_ids = [int(i) for i in request.form.getlist("record_ids") if i.strip()]
+    single_id = request.form.get("delete_id", "").strip()
+
+    if student_number:
+        conn.execute(
+            """DELETE FROM permit_records WHERE term=%s AND student_id IN
+               (SELECT id FROM students WHERE term=%s AND student_number=%s)""",
+            (TERM, TERM, student_number),
+        )
+    elif record_ids:
+        conn.execute("DELETE FROM permit_records WHERE id = ANY(%s)", (record_ids,))
+    elif single_id:
+        conn.execute("DELETE FROM permit_records WHERE id=%s", (single_id,))
+
     conn.commit()
     conn.close()
     q = request.form.get("q", "").strip()
@@ -342,34 +373,47 @@ def admin_import():
     """Web version of `python -m app.import_real_data`: upload the school's
     .xls exports straight from the browser and load them into Neon, no
     local Python needed. Files are read into memory and never written to
-    disk."""
+    disk. Only one file type is picked from the file_type dropdown per
+    upload, and only that type's data is touched -- picking 학과별 시간표
+    never accidentally clears the roster, for example."""
     _check_admin_token()
     term = request.form.get("term") or TERM
+    file_type = request.form.get("file_type", "")
+
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return render_template("admin_import.html", term=term, result=["업로드할 파일을 선택해 주세요."])
 
     conn = get_conn()
     log = []
     try:
-        roster_file = request.files.get("roster")
-        if roster_file and roster_file.filename:
-            students = parse_roster(roster_file.read())
+        if file_type == "roster":
+            students = parse_roster(upload.read())
             load_roster(conn, students, term)
-            log.append(f"학생 {len(students)}명 적재 완료")
-
-        total_slots = 0
-        for grade in ["1", "2", "3", "4"]:
-            f = request.files.get(f"timetable_{grade}")
-            if f and f.filename:
-                slots = parse_timetable(f.read(), grade)
-                load_timetable(conn, slots, term)
-                total_slots += len(slots)
-                log.append(f"{grade}학년 시간표: 수업 {len(slots)}건 적재 완료")
-        if total_slots:
-            log.append(f"총 수업 슬롯 {total_slots}건")
-
-        if not log:
-            log.append("업로드된 파일이 없습니다. 최소 하나는 선택해 주세요.")
-        else:
+            log.append(f"재학생명단: 학생 {len(students)}명 적재 완료")
             conn.commit()
+
+        elif file_type == "timetable":
+            grade = request.form.get("grade", "").strip()
+            if grade not in {"1", "2", "3", "4"}:
+                log.append("학과별 시간표를 올리려면 학년을 선택해 주세요.")
+            else:
+                slots = parse_timetable(upload.read(), grade)
+                load_timetable(conn, slots, term)
+                log.append(f"{grade}학년 시간표: 수업 {len(slots)}건 적재 완료")
+                conn.commit()
+
+        elif file_type == "makeup":
+            makeups = parse_makeup_report(upload.read())
+            unmatched = load_course_makeups(conn, makeups, term)
+            log.append(f"보강결과보고서: {len(makeups) - len(unmatched)}건 적재 완료")
+            if unmatched:
+                log.append("다음 항목은 일치하는 과목을 찾지 못해 건너뛰었습니다 (먼저 해당 학과별 "
+                            "시간표를 올려주세요): " + "; ".join(unmatched))
+            conn.commit()
+
+        else:
+            log.append("파일 종류를 선택해 주세요.")
     except Exception as e:
         conn.rollback()
         log = [f"오류 발생: {e}"]

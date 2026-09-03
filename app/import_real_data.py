@@ -31,6 +31,7 @@ to git -- see .gitignore and README.md.
 import argparse
 import re
 import sys
+from datetime import date
 
 import xlrd
 
@@ -41,6 +42,9 @@ ROSTER_BLOCK_HEADER = "재  학  생  명  단"
 BLOCK_INFO_RE = re.compile(r"학과\s*:\s*(\S+)\s+학년\s*:\s*(\d+)\s+반\s*:\s*(\S+)")
 
 DAY_NAMES = set(WEEKDAY_ORDER)
+
+# "2026/09/22(화) 2~4" or "2026/09/22(화) 2" -> date + period range
+MAKEUP_CELL_RE = re.compile(r"(\d{4})/(\d{1,2})/(\d{1,2})\([^)]+\)\s*(\d+)(?:\s*~\s*(\d+))?")
 
 
 def _cell_str(value):
@@ -187,6 +191,73 @@ def parse_timetable(file_bytes, grade):
 
 
 # ---------------------------------------------------------------------------
+# 보강결과보고서 (makeup class report)
+# ---------------------------------------------------------------------------
+
+def _parse_makeup_cell(text):
+    """'2026/09/22(화) 2~4' -> (date(2026,9,22), 2, 4). Returns None if the
+    cell doesn't match the expected format (e.g. blank)."""
+    m = MAKEUP_CELL_RE.search(text)
+    if not m:
+        return None
+    year, month, day, p_start, p_end = m.groups()
+    return date(int(year), int(month), int(day)), int(p_start), int(p_end or p_start)
+
+
+def parse_makeup_report(file_bytes):
+    """Yields dicts: grade, course_name, professor, cancelled_date,
+    cancelled_period_start, cancelled_period_end, makeup_date,
+    period_start, period_end -- one row per 결강/보강 pair. Expects columns
+    학과명/과목코드/과목명/분반/학년/결강일/보강일/담당교수 (사유구분 is
+    read but not stored). 분반 in this report is its own administrative
+    code (e.g. "102"), unrelated to the single-letter 분반 the timetable
+    uses, so it's read but not kept -- load_course_makeups matches courses
+    by grade+과목명+담당교수 plus the exact weekday/교시 그 course meets on
+    (from 결강일), against course_slots, instead."""
+    book = xlrd.open_workbook(file_contents=file_bytes)
+    sh = book.sheet_by_index(0)
+
+    header_row = None
+    cols = None
+    for r in range(sh.nrows):
+        row = [_cell_str(v) for v in sh.row_values(r)]
+        if "과목명" in row and "결강일" in row and "보강일" in row:
+            header_row = r
+            cols = {name: i for i, name in enumerate(row)}
+            break
+    if header_row is None:
+        raise ValueError("보강결과보고서: 과목명/결강일/보강일 열이 있는 헤더 행을 찾을 수 없습니다")
+
+    required = ["과목명", "학년", "결강일", "보강일", "담당교수"]
+    missing = [c for c in required if c not in cols]
+    if missing:
+        raise ValueError(f"보강결과보고서: {', '.join(missing)} 열을 찾을 수 없습니다")
+
+    results = []
+    for r in range(header_row + 1, sh.nrows):
+        row = sh.row_values(r)
+        course_name = _cell_str(row[cols["과목명"]])
+        if not course_name:
+            continue
+        cancelled = _parse_makeup_cell(_cell_str(row[cols["결강일"]]))
+        makeup = _parse_makeup_cell(_cell_str(row[cols["보강일"]]))
+        if cancelled is None or makeup is None:
+            continue
+        results.append({
+            "grade": _cell_str(row[cols["학년"]]),
+            "course_name": course_name,
+            "professor": _cell_str(row[cols["담당교수"]]),
+            "cancelled_date": cancelled[0],
+            "cancelled_period_start": cancelled[1],
+            "cancelled_period_end": cancelled[2],
+            "makeup_date": makeup[0],
+            "period_start": makeup[1],
+            "period_end": makeup[2],
+        })
+    return results
+
+
+# ---------------------------------------------------------------------------
 # DB loading
 # ---------------------------------------------------------------------------
 
@@ -236,6 +307,50 @@ def load_timetable(conn, slots, term):
             for s in slots
         ],
     )
+
+
+def load_course_makeups(conn, makeups, term):
+    """Matches each row to a course and upserts it into course_makeups. The
+    report's own 분반 code doesn't line up with the timetable's section
+    letters (see parse_makeup_report), so matching instead uses grade +
+    과목명 + 담당교수 plus the exact weekday/교시 the course meets on per
+    결강일 -- i.e. exactly the (day, period_start, period_end) row that
+    should already exist in course_slots for the section this 보강 is
+    about. Rows that don't resolve to exactly one course (typo, or that
+    course's timetable hasn't been uploaded yet) are skipped and returned
+    so the caller can report them instead of failing the whole upload."""
+    cur = conn.cursor()
+    unmatched = []
+    rows = []
+    for m in makeups:
+        cancelled_day = WEEKDAY_ORDER[m["cancelled_date"].weekday()]
+        cur.execute(
+            """SELECT c.id FROM courses c
+               JOIN course_slots cs ON cs.course_id = c.id
+               WHERE c.term=%s AND c.grade=%s AND c.course_name=%s AND c.professor=%s
+                 AND cs.day=%s AND cs.period_start=%s AND cs.period_end=%s""",
+            (term, m["grade"], m["course_name"], m["professor"],
+             cancelled_day, m["cancelled_period_start"], m["cancelled_period_end"]),
+        )
+        candidates = cur.fetchall()
+        label = (f"{m['grade']}학년 {m['course_name']} ({m['professor']}, "
+                 f"{cancelled_day} {m['cancelled_period_start']}~{m['cancelled_period_end']}교시)")
+        if len(candidates) != 1:
+            unmatched.append(label + (" -- 일치하는 수업을 찾지 못함" if not candidates
+                                       else " -- 여러 수업과 일치해 특정할 수 없음"))
+            continue
+        rows.append((candidates[0]["id"], m["cancelled_date"], m["makeup_date"],
+                      m["period_start"], m["period_end"]))
+
+    if rows:
+        cur.executemany(
+            """INSERT INTO course_makeups (course_id, cancelled_date, makeup_date, period_start, period_end)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (course_id, cancelled_date, makeup_date)
+               DO UPDATE SET period_start = excluded.period_start, period_end = excluded.period_end""",
+            rows,
+        )
+    return unmatched
 
 
 def main():

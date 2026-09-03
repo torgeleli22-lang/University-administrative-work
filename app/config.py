@@ -17,3 +17,15 @@ MAX_ABSENCE_PERIODS_PER_COURSE = 11
 # course's normal schedule, since the office may need to record a
 # different range than the course's usual slot.
 PERIOD_CHOICES = list(range(1, 13))
+
+# 선택과목 (electives): the timetable file ties every course to one 분반
+# (section) via its "who's enrolled" column, which is correct for 전공필수
+# courses (the whole homeroom takes them together) but wrong for electives
+# -- students choose one of several parallel offerings and the 분반 letter
+# on each offering is really just an elective-group label, not the
+# student's actual homeroom. Any course whose name is listed here is shown
+# to every student in its grade regardless of section, in addition to
+# students in its own listed section. Update this each term as electives
+# change (there is no marker for "이 과목은 선택과목이다" in the timetable
+# file itself, so this has to be maintained by hand).
+ELECTIVE_COURSE_NAMES = {"애플리케이션프레임워크", "빅데이터프로그래밍"}
