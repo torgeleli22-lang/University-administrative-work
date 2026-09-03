@@ -9,7 +9,13 @@ from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, PERIOD_CHOICES, TERM
 from app.db import get_conn, init_db
 from app.hwpx_filler import MAX_COURSES, REASON_LABELS, PermitRequest, generate_hwpx
 from app.import_real_data import load_roster, load_timetable, parse_roster, parse_timetable
-from app.queries import get_slots_by_course, get_student_courses, get_used_hours_by_course, valid_class_dates
+from app.queries import (
+    get_slots_by_course,
+    get_student_courses,
+    get_student_permit_records,
+    get_used_hours_by_course,
+    valid_class_dates,
+)
 from app.seed import seed as seed_dummy_data
 
 TEMPLATE_HWPX = Path(__file__).resolve().parent / "assets" / "attendance_permit_template.hwpx"
@@ -72,11 +78,13 @@ def student_form(student_id):
         conn.close()
         abort(404)
     courses = get_student_courses(conn, student)
+    history = get_student_permit_records(conn, student_id)
     conn.close()
     return render_maybe_partial(
         "_student_panel.html", "form.html",
         student=student,
         courses=courses,
+        history=history,
         reasons=REASON_LABELS,
         max_courses=MAX_COURSES,
         max_absence_periods=MAX_ABSENCE_PERIODS_PER_COURSE,
@@ -267,8 +275,12 @@ def generate(student_id):
     )
 
 
-@app.route("/records")
-def records():
+def _search_records(q):
+    """Same search-only gate as the home page: with no query, nobody's
+    records are listed -- looking someone up requires typing their own
+    학번 or 이름 first."""
+    if not q:
+        return []
     conn = get_conn()
     rows = conn.execute(
         """SELECT p.id, p.created_at, s.student_number, s.name, s.grade, s.class_no,
@@ -277,12 +289,26 @@ def records():
            FROM permit_records p
            JOIN students s ON s.id = p.student_id
            JOIN courses c ON c.id = p.course_id
-           WHERE p.term = %s
+           WHERE p.term = %s AND (s.student_number LIKE %s OR s.name LIKE %s)
            ORDER BY p.created_at DESC""",
-        (TERM,),
+        (TERM, f"%{q}%", f"%{q}%"),
     ).fetchall()
     conn.close()
-    return render_template("records.html", records=rows, reasons=REASON_LABELS, term=TERM)
+    return rows
+
+
+@app.route("/records")
+def records():
+    q = request.args.get("q", "").strip()
+    return render_template("records.html", records=_search_records(q), q=q, reasons=REASON_LABELS, term=TERM)
+
+
+@app.route("/records/search")
+def records_search():
+    """Partial-page endpoint the 사용 기록 search box fetches into, mirroring
+    /students/search on the home page."""
+    q = request.args.get("q", "").strip()
+    return render_template("_records_results.html", records=_search_records(q), q=q, reasons=REASON_LABELS)
 
 
 def _check_admin_token():
@@ -302,7 +328,8 @@ def records_delete():
     conn.execute("DELETE FROM permit_records WHERE id=%s", (record_id,))
     conn.commit()
     conn.close()
-    return redirect(url_for("records"))
+    q = request.form.get("q", "").strip()
+    return redirect(url_for("records", q=q) if q else url_for("records"))
 
 
 @app.route("/admin/import", methods=["GET"])

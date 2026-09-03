@@ -16,6 +16,33 @@
   </dl>
 </section>
 
+{% if history %}
+<fieldset>
+  <legend>이번 학기 사용 기록 ({{ history|length }}건)</legend>
+  <div class="table-scroll">
+  <table class="student-table compact">
+    <thead>
+      <tr>
+        <th>생성일시</th><th>과목</th><th>담당교수</th><th>사유</th><th>수업일</th><th>교시</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in history %}
+      <tr>
+        <td>{{ r.created_at }}</td>
+        <td>{{ r.course_name }}</td>
+        <td>{{ r.professor }}</td>
+        <td>{{ reasons[r.reason_code] }}</td>
+        <td>{{ r.class_date }}</td>
+        <td>{% if r.class_period_start == r.class_period_end %}{{ r.class_period_start }}교시{% else %}{{ r.class_period_start }}~{{ r.class_period_end }}교시{% endif %} ({{ r.periods_missed }}시간)</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</fieldset>
+{% endif %}
+
 <form method="post" action="{{ url_for('review', student_id=student.id) }}" class="js-review-form">
   <fieldset>
     <legend>결석 사유</legend>

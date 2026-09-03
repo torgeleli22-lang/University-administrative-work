@@ -85,6 +85,22 @@ def get_used_hours_by_course(conn, student_id, course_ids, term=TERM):
     return used
 
 
+def get_student_permit_records(conn, student_id, term=TERM):
+    """This student's own 출석인정허가원 history for the term -- shown while
+    filling out a new one so the office can see at a glance what's already
+    on file (and how close each course is to the 12시간 cap) without
+    switching to the 사용 기록 tab."""
+    return conn.execute(
+        """SELECT p.id, p.created_at, c.course_name, c.professor, p.reason_code,
+                  p.class_date, p.class_period_start, p.class_period_end, p.periods_missed
+           FROM permit_records p
+           JOIN courses c ON c.id = p.course_id
+           WHERE p.term = %s AND p.student_id = %s
+           ORDER BY p.created_at DESC""",
+        (term, student_id),
+    ).fetchall()
+
+
 def get_student_courses(conn, student, term=TERM):
     """Courses offered to this student's (grade, section) this term, each
     annotated with cumulative hours already used and hours still available

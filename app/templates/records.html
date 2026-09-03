@@ -1,45 +1,54 @@
 {% extends "base.html" %}
+{% block main_class %}main-wide{% endblock %}
 {% block content %}
 <h1>출석인정허가원 사용 기록 ({{ term }})</h1>
-{% if records %}
-<form method="post" action="{{ url_for('records_delete') }}">
-  <label>관리자 토큰 (삭제할 때만 필요) <input type="password" name="admin_token"></label>
-  <div style="overflow-x:auto">
-  <table class="student-table">
-    <thead>
-      <tr>
-        <th>생성일시</th>
-        <th>학번</th>
-        <th>성명</th>
-        <th>학년/반</th>
-        <th>과목</th>
-        <th>담당교수</th>
-        <th>결석 사유</th>
-        <th>수업일</th>
-        <th>수업시간</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in records %}
-      <tr>
-        <td>{{ r.created_at }}</td>
-        <td>{{ r.student_number }}</td>
-        <td>{{ r.name }}</td>
-        <td>{{ r.grade }}/{{ r.class_no }}</td>
-        <td>{{ r.course_name }}</td>
-        <td>{{ r.professor }}</td>
-        <td>{{ reasons[r.reason_code] }}</td>
-        <td>{{ r.class_date }}</td>
-        <td>{% if r.class_period_start == r.class_period_end %}{{ r.class_period_start }}교시{% else %}{{ r.class_period_start }}~{{ r.class_period_end }}교시{% endif %} ({{ r.periods_missed }}시간)</td>
-        <td><button type="submit" name="delete_id" value="{{ r.id }}" class="btn">삭제</button></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+
+<form method="get" class="search-bar" id="records-search-form">
+  <input type="text" name="q" id="records-search-input" placeholder="본인의 학번 또는 이름으로 검색" value="{{ q }}" autocomplete="off" autofocus>
+  <button type="submit" class="btn primary">조회</button>
+</form>
+
+<form method="post" action="{{ url_for('records_delete') }}" id="records-delete-form">
+  <input type="hidden" name="q" id="records-q-hidden" value="{{ q }}">
+  <label class="admin-token-row">관리자 토큰 (삭제할 때만 필요) <input type="password" name="admin_token" autocomplete="off"></label>
+
+  <div id="record-results">
+    {% include "_records_results.html" %}
   </div>
 </form>
-{% else %}
-<p class="empty">아직 생성된 기록이 없습니다.</p>
-{% endif %}
+
+<script>
+  // 검색창에 입력할 때마다 결과 표(#record-results)만 fetch로 갈아끼운다.
+  // 삭제 폼은 그대로 유지되므로 검색 후에도 관리자 토큰 입력값이 지워지지 않는다.
+  (function () {
+    var input = document.getElementById("records-search-input");
+    var form = document.getElementById("records-search-form");
+    var results = document.getElementById("record-results");
+    var qHidden = document.getElementById("records-q-hidden");
+    var timer = null;
+
+    function runSearch() {
+      var q = input.value.trim();
+      fetch("/records/search?q=" + encodeURIComponent(q))
+        .then(function (res) { return res.text(); })
+        .then(function (html) {
+          results.innerHTML = html;
+          qHidden.value = q;
+          var newUrl = q ? "/records?q=" + encodeURIComponent(q) : "/records";
+          history.replaceState(null, "", newUrl);
+        });
+    }
+
+    input.addEventListener("input", function () {
+      clearTimeout(timer);
+      timer = setTimeout(runSearch, 250);
+    });
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      clearTimeout(timer);
+      runSearch();
+    });
+  })();
+</script>
 {% endblock %}

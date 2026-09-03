@@ -1,5 +1,6 @@
 {% if q %}
   {% if students %}
+  <div class="table-scroll">
   <table class="student-table">
     <thead>
       <tr>
@@ -24,6 +25,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p class="empty">검색 결과가 없습니다.</p>
   {% endif %}
