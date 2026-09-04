@@ -23,10 +23,11 @@
   <table class="student-table compact">
     <thead>
       <tr>
-        <th>생성일시</th><th>과목</th><th>담당교수</th><th>사유</th><th>수업일</th><th>교시</th>
+        <th>생성일시</th><th>과목</th><th>담당교수</th><th>사유</th><th>수업일</th><th>교시</th><th></th>
       </tr>
     </thead>
     <tbody>
+      {% set ns = namespace(last_key=None) %}
       {% for r in history %}
       <tr>
         <td>{{ r.created_at }}</td>
@@ -35,7 +36,13 @@
         <td>{{ reasons[r.reason_code] }}</td>
         <td>{{ r.class_date }}</td>
         <td>{% if r.class_period_start == r.class_period_end %}{{ r.class_period_start }}교시{% else %}{{ r.class_period_start }}~{{ r.class_period_end }}교시{% endif %} ({{ r.periods_missed }}시간)</td>
+        <td>
+          {% if r.created_at != ns.last_key %}
+          <a class="btn" href="{{ url_for('records_reprint', student_id=student.id, created_at=r.created_at.isoformat()) }}">다시 출력</a>
+          {% endif %}
+        </td>
       </tr>
+      {% set ns.last_key = r.created_at %}
       {% endfor %}
     </tbody>
   </table>

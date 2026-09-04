@@ -9,12 +9,25 @@ from datetime import timedelta
 from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, TERM, WEEKDAY_ORDER
 
 
+def _weekday_index(day):
+    """WEEKDAY_ORDER.index(day), but never raises: a course_slots row
+    somehow carrying a day value that isn't one of the 7 expected strings
+    (bad data from an old import, manual DB edit, etc.) used to blow up
+    every sort that touches it with an uncaught ValueError -- a 500 on the
+    entire apply flow for any student who happens to have that course.
+    Unknown values just sort last instead."""
+    try:
+        return WEEKDAY_ORDER.index(day)
+    except ValueError:
+        return len(WEEKDAY_ORDER)
+
+
 def format_schedule(slots):
     """Human-readable weekly schedule, e.g. ('화, 목', '3~4교시, 1~2교시') --
     reference text only; actual 결석 교시 selection happens per class_date."""
     if not slots:
         return "미정", "미정"
-    slots = sorted(slots, key=lambda s: (WEEKDAY_ORDER.index(s["day"]), s["period_start"]))
+    slots = sorted(slots, key=lambda s: (_weekday_index(s["day"]), s["period_start"]))
     days = ", ".join(s["day"] for s in slots)
     times = ", ".join(
         f"{s['period_start']}~{s['period_end']}교시" if s["period_start"] != s["period_end"]
@@ -38,7 +51,7 @@ def get_slots_by_course(conn, course_ids):
     for r in rows:
         by_course[r["course_id"]].append(r)
     for cid in by_course:
-        by_course[cid].sort(key=lambda s: (WEEKDAY_ORDER.index(s["day"]), s["period_start"]))
+        by_course[cid].sort(key=lambda s: (_weekday_index(s["day"]), s["period_start"]))
     return by_course
 
 
@@ -137,24 +150,68 @@ def get_student_permit_records(conn, student_id, term=TERM):
     ).fetchall()
 
 
-def get_elective_course_names(conn):
-    """Course names shown to every student in their grade regardless of
+def get_permit_submission(conn, student_id, created_at):
+    """Every permit_records row from one /generate call for this student --
+    Postgres's now() (used as created_at's default) is stable for the
+    whole transaction, and generate() commits one call's rows in a single
+    transaction, so (student_id, created_at) reliably identifies "everything
+    that was in that one hwpx download" even when it covered several
+    courses/dates at once. Used to regenerate the exact same file again
+    without re-writing permit_records or re-running the 12시간 cap check
+    (it already passed once; nothing here is user-editable)."""
+    return conn.execute(
+        """SELECT p.course_id, p.reason_code, p.period_start, p.period_end,
+                  p.class_date, p.class_period_start, p.class_period_end,
+                  c.course_name, c.professor,
+                  s.student_number, s.name, s.department, s.grade, s.class_no
+           FROM permit_records p
+           JOIN courses c ON c.id = p.course_id
+           JOIN students s ON s.id = p.student_id
+           WHERE p.student_id = %s AND p.created_at = %s
+           ORDER BY p.id""",
+        (student_id, created_at),
+    ).fetchall()
+
+
+def get_elective_course_names(conn, grade):
+    """Course names shown to every student in this grade regardless of
     section -- see db.py's elective_courses table and config.py's old
-    ELECTIVE_COURSE_NAMES comment for why. Managed from the 관리자 업로드
-    page (admin_elective_add/delete in app.py)."""
-    rows = conn.execute("SELECT course_name FROM elective_courses ORDER BY course_name").fetchall()
+    ELECTIVE_COURSE_NAMES comment for why. Grade-scoped: the same course
+    name can be registered as an elective in one grade without affecting
+    any other. Managed from the 관리자 업로드 page (admin_elective_add/
+    delete in app.py)."""
+    rows = conn.execute(
+        "SELECT course_name FROM elective_courses WHERE grade = %s ORDER BY course_name",
+        (grade,),
+    ).fetchall()
     return [r["course_name"] for r in rows]
 
 
-def add_elective_course(conn, course_name):
+def get_all_elective_courses(conn):
+    """{grade: [course_name, ...]} for every grade that has at least one
+    registered elective -- for the 관리자 업로드 page's per-학년 listing."""
+    rows = conn.execute(
+        "SELECT grade, course_name FROM elective_courses ORDER BY grade, course_name"
+    ).fetchall()
+    by_grade = {}
+    for r in rows:
+        by_grade.setdefault(r["grade"], []).append(r["course_name"])
+    return by_grade
+
+
+def add_elective_course(conn, grade, course_name):
     conn.execute(
-        "INSERT INTO elective_courses (course_name) VALUES (%s) ON CONFLICT (course_name) DO NOTHING",
-        (course_name,),
+        """INSERT INTO elective_courses (grade, course_name) VALUES (%s, %s)
+           ON CONFLICT (grade, course_name) DO NOTHING""",
+        (grade, course_name),
     )
 
 
-def delete_elective_course(conn, course_name):
-    conn.execute("DELETE FROM elective_courses WHERE course_name = %s", (course_name,))
+def delete_elective_course(conn, grade, course_name):
+    conn.execute(
+        "DELETE FROM elective_courses WHERE grade = %s AND course_name = %s",
+        (grade, course_name),
+    )
 
 
 def get_student_courses(conn, student, term=TERM):
@@ -166,7 +223,7 @@ def get_student_courses(conn, student, term=TERM):
     cap, and the individual weekdays it meets on (for grouping in the
     결석 과목 selection UI). Four queries total, regardless of how many
     courses the student has."""
-    elective_names = get_elective_course_names(conn)
+    elective_names = get_elective_course_names(conn, student["grade"])
     rows = conn.execute(
         """SELECT * FROM courses WHERE term=%s AND grade=%s
            AND (section=%s OR course_name = ANY(%s))
@@ -215,10 +272,11 @@ def group_courses_by_weekday(courses):
     by_day = {d: [] for d in WEEKDAY_ORDER}
     unscheduled = []
     for c in courses:
-        if not c["days"]:
-            unscheduled.append(c)
+        primary_day = c["days"][0] if c["days"] else None
+        if primary_day in by_day:
+            by_day[primary_day].append(c)
         else:
-            by_day[c["days"][0]].append(c)
+            unscheduled.append(c)
 
     groups = [(f"{d}요일", by_day[d]) for d in WEEKDAY_ORDER if by_day[d]]
     if unscheduled:

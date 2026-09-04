@@ -19,8 +19,9 @@ from app.import_real_data import (
 from app.queries import (
     add_elective_course,
     delete_elective_course,
-    get_elective_course_names,
+    get_all_elective_courses,
     get_makeups_by_course,
+    get_permit_submission,
     get_slots_by_course,
     get_student_courses,
     get_student_permit_records,
@@ -108,11 +109,31 @@ def student_form(student_id):
 def _parse_period(form):
     start_raw = form.get("period_start", "").strip()
     end_raw = form.get("period_end", "").strip()
-    period_start = datetime.strptime(start_raw, "%Y-%m-%d").date() if start_raw else date.today()
-    period_end = datetime.strptime(end_raw, "%Y-%m-%d").date() if end_raw else date.today()
+    try:
+        period_start = datetime.strptime(start_raw, "%Y-%m-%d").date() if start_raw else date.today()
+        period_end = datetime.strptime(end_raw, "%Y-%m-%d").date() if end_raw else date.today()
+    except ValueError:
+        abort(400, "결석 기간 날짜 형식이 올바르지 않습니다.")
     if period_end < period_start:
         abort(400, "종료일은 시작일보다 앞선 날짜로 설정할 수 없습니다.")
     return period_start, period_end
+
+
+def _parse_course_ids(form):
+    try:
+        return [int(cid) for cid in form.getlist("course_ids")]
+    except ValueError:
+        abort(400, "선택한 과목 정보가 올바르지 않습니다.")
+
+
+def _parse_reason_code(form):
+    try:
+        reason_code = int(form.get("reason_code", ""))
+    except ValueError:
+        abort(400, "결석 사유를 선택해 주세요.")
+    if reason_code not in REASON_LABELS:
+        abort(400, "결석 사유를 선택해 주세요.")
+    return reason_code
 
 
 @app.route("/student/<int:student_id>/review", methods=["POST"])
@@ -131,9 +152,9 @@ def review(student_id):
         conn.close()
         abort(404)
 
-    reason_code = int(request.form["reason_code"])
+    reason_code = _parse_reason_code(request.form)
     period_start, period_end = _parse_period(request.form)
-    course_ids = [int(cid) for cid in request.form.getlist("course_ids")]
+    course_ids = _parse_course_ids(request.form)
 
     if len(course_ids) > MAX_COURSES:
         conn.close()
@@ -310,9 +331,9 @@ def confirm(student_id):
         conn.close()
         abort(404)
 
-    reason_code = int(request.form["reason_code"])
+    reason_code = _parse_reason_code(request.form)
     period_start, period_end = _parse_period(request.form)
-    course_ids = [int(cid) for cid in request.form.getlist("course_ids")]
+    course_ids = _parse_course_ids(request.form)
 
     context = _load_selection_context(conn, student, student_id, course_ids)
     conn.close()
@@ -340,9 +361,9 @@ def generate(student_id):
         conn.close()
         abort(404)
 
-    reason_code = int(request.form["reason_code"])
+    reason_code = _parse_reason_code(request.form)
     period_start, period_end = _parse_period(request.form)
-    course_ids = [int(cid) for cid in request.form.getlist("course_ids")]
+    course_ids = _parse_course_ids(request.form)
 
     context = _load_selection_context(conn, student, student_id, course_ids)
     conn.close()  # closed before validation so an abort() here can't leak the connection
@@ -393,14 +414,14 @@ def _search_records(q):
         return []
     conn = get_conn()
     rows = conn.execute(
-        """SELECT p.id, p.created_at, s.student_number, s.name, s.grade, s.class_no,
+        """SELECT p.id, p.student_id, p.created_at, s.student_number, s.name, s.grade, s.class_no,
                   c.course_name, c.professor, p.reason_code,
                   p.class_date, p.class_period_start, p.class_period_end, p.periods_missed
            FROM permit_records p
            JOIN students s ON s.id = p.student_id
            JOIN courses c ON c.id = p.course_id
            WHERE p.term = %s AND (s.student_number LIKE %s OR s.name LIKE %s)
-           ORDER BY p.created_at DESC""",
+           ORDER BY p.created_at DESC, p.student_id, p.id""",
         (TERM, f"%{q}%", f"%{q}%"),
     ).fetchall()
     conn.close()
@@ -421,17 +442,73 @@ def records_search():
     return render_template("_records_results.html", records=_search_records(q), q=q, reasons=REASON_LABELS)
 
 
+@app.route("/records/reprint/<int:student_id>")
+def records_reprint(student_id):
+    """사용 기록의 "다시 출력" 버튼: regenerates the exact same hwpx a past
+    /generate call produced, straight from what's already in permit_records
+    (see get_permit_submission) -- no re-validation against the 12시간 cap
+    or the current course schedule, since this already passed that check
+    once and nothing here is user-editable. Uses the original submission's
+    own apply_date so the reprinted form matches what was actually issued,
+    not today's date."""
+    created_at_raw = request.args.get("created_at", "")
+    try:
+        created_at = datetime.fromisoformat(created_at_raw)
+    except ValueError:
+        abort(400, "잘못된 요청입니다.")
+
+    conn = get_conn()
+    rows = get_permit_submission(conn, student_id, created_at)
+    conn.close()
+    if not rows:
+        abort(404, "해당 기록을 찾을 수 없습니다.")
+
+    first = rows[0]
+    courses = []
+    for r in rows:
+        class_date = datetime.strptime(r["class_date"], "%Y-%m-%d").date()
+        p_start, p_end = r["class_period_start"], r["class_period_end"]
+        courses.append({
+            "course_name": r["course_name"],
+            "professor": r["professor"],
+            "class_day": f"{class_date.month}/{class_date.day}",
+            "class_time": f"{p_start}~{p_end}교시" if p_start != p_end else f"{p_start}교시",
+        })
+
+    req = PermitRequest(
+        student_number=first["student_number"],
+        name=first["name"],
+        department=first["department"],
+        grade=first["grade"],
+        class_no=first["class_no"],
+        reason_code=first["reason_code"],
+        period_start=datetime.strptime(first["period_start"], "%Y-%m-%d").date(),
+        period_end=datetime.strptime(first["period_end"], "%Y-%m-%d").date(),
+        courses=courses,
+        apply_date=created_at.date(),
+    )
+    data = generate_hwpx(str(TEMPLATE_HWPX), req)
+
+    filename = f"출석인정허가원_{first['name']}_{first['period_start']}.hwpx"
+    return send_file(
+        BytesIO(data),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/haansofthwpx",
+    )
+
+
 def _all_records():
     conn = get_conn()
     rows = conn.execute(
-        """SELECT p.id, p.created_at, s.student_number, s.name, s.grade, s.class_no,
+        """SELECT p.id, p.student_id, p.created_at, s.student_number, s.name, s.grade, s.class_no,
                   c.course_name, c.professor, p.reason_code,
                   p.class_date, p.class_period_start, p.class_period_end, p.periods_missed
            FROM permit_records p
            JOIN students s ON s.id = p.student_id
            JOIN courses c ON c.id = p.course_id
            WHERE p.term = %s
-           ORDER BY p.created_at DESC""",
+           ORDER BY p.created_at DESC, p.student_id, p.id""",
         (TERM,),
     ).fetchall()
     conn.close()
@@ -491,9 +568,9 @@ def records_delete():
 
 def _render_admin_import(term, result):
     conn = get_conn()
-    electives = get_elective_course_names(conn)
+    electives_by_grade = get_all_elective_courses(conn)
     conn.close()
-    return render_template("admin_import.html", term=term, result=result, electives=electives)
+    return render_template("admin_import.html", term=term, result=result, electives_by_grade=electives_by_grade)
 
 
 @app.route("/admin/import", methods=["GET"])
@@ -569,13 +646,16 @@ def admin_seed():
 @app.route("/admin/electives/add", methods=["POST"])
 def admin_elective_add():
     """운영자 페이지: registers a course name (e.g. 3학년 애플리케이션프레임워크)
-    as shown to every student in its grade regardless of section -- see
-    get_student_courses/group_courses_by_weekday in queries.py."""
+    as shown to every student in that grade regardless of section -- see
+    get_student_courses/group_courses_by_weekday in queries.py. Grade-scoped
+    so the same course name can be a different elective in a different
+    grade without conflicting."""
     _check_admin_token()
+    grade = request.form.get("grade", "").strip()
     course_name = request.form.get("course_name", "").strip()
-    if course_name:
+    if grade in {"1", "2", "3", "4"} and course_name:
         conn = get_conn()
-        add_elective_course(conn, course_name)
+        add_elective_course(conn, grade, course_name)
         conn.commit()
         conn.close()
     return redirect(url_for("admin_import_form"))
@@ -584,10 +664,11 @@ def admin_elective_add():
 @app.route("/admin/electives/delete", methods=["POST"])
 def admin_elective_delete():
     _check_admin_token()
+    grade = request.form.get("grade", "").strip()
     course_name = request.form.get("course_name", "").strip()
-    if course_name:
+    if grade in {"1", "2", "3", "4"} and course_name:
         conn = get_conn()
-        delete_elective_course(conn, course_name)
+        delete_elective_course(conn, grade, course_name)
         conn.commit()
         conn.close()
     return redirect(url_for("admin_import_form"))

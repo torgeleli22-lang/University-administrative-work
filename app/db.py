@@ -136,6 +136,20 @@ MIGRATIONS = [
     SELECT name FROM (VALUES ('애플리케이션프레임워크'), ('빅데이터프로그래밍')) AS v(name)
     WHERE NOT EXISTS (SELECT 1 FROM elective_courses)
     """,
+    # elective_courses started as a flat, ungraded list -- a course_name
+    # could only be registered once, period, even though the same name
+    # could legitimately be a different elective in different grades. Adds
+    # a grade column (backfilling existing rows as '3', since the only
+    # electives that existed before this were 3학년-specific) and swaps
+    # the old course_name-only uniqueness for a (grade, course_name) one,
+    # via an index rather than a new PRIMARY KEY so this stays safely
+    # re-runnable on every startup (ADD CONSTRAINT has no IF NOT EXISTS).
+    "ALTER TABLE elective_courses ADD COLUMN IF NOT EXISTS grade TEXT",
+    "UPDATE elective_courses SET grade = '3' WHERE grade IS NULL",
+    "ALTER TABLE elective_courses ALTER COLUMN grade SET NOT NULL",
+    "ALTER TABLE elective_courses DROP CONSTRAINT IF EXISTS elective_courses_pkey",
+    "CREATE UNIQUE INDEX IF NOT EXISTS elective_courses_unique_idx "
+    "ON elective_courses (grade, course_name)",
 ]
 
 

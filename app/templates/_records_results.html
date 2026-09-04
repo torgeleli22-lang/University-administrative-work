@@ -32,7 +32,9 @@
       </tr>
     </thead>
     <tbody>
+      {% set ns = namespace(last_key=None) %}
       {% for r in records %}
+      {% set submission_key = r.student_id ~ "|" ~ r.created_at %}
       <tr>
         <td><input type="checkbox" name="record_ids" value="{{ r.id }}" class="js-row-check"></td>
         <td>{{ r.created_at }}</td>
@@ -44,9 +46,15 @@
         <td>{{ reasons[r.reason_code] }}</td>
         <td>{{ r.class_date }}</td>
         <td>{% if r.class_period_start == r.class_period_end %}{{ r.class_period_start }}교시{% else %}{{ r.class_period_start }}~{{ r.class_period_end }}교시{% endif %} ({{ r.periods_missed }}시간)</td>
-        <td><button type="submit" name="delete_id" value="{{ r.id }}" class="btn danger js-admin-gated" disabled
-          onclick="return confirm('이 기록을 삭제하시겠습니까?');">삭제</button></td>
+        <td>
+          {% if submission_key != ns.last_key %}
+          <a class="btn" href="{{ url_for('records_reprint', student_id=r.student_id, created_at=r.created_at.isoformat()) }}">다시 출력</a>
+          {% endif %}
+          <button type="submit" name="delete_id" value="{{ r.id }}" class="btn danger js-admin-gated" disabled
+            onclick="return confirm('이 기록을 삭제하시겠습니까?');">삭제</button>
+        </td>
       </tr>
+      {% set ns.last_key = submission_key %}
       {% endfor %}
     </tbody>
   </table>

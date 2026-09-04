@@ -54,23 +54,31 @@
 </form>
 
 <fieldset>
-  <legend>선택과목(전 분반 공통) 관리</legend>
-  <p class="hint">여기 등록한 과목명은 분반(반)에 상관없이 같은 학년 학생 전체에게
-    결석 과목 선택 목록에 노출됩니다. 3학년 애플리케이션프레임워크/빅데이터프로그래밍처럼
-    분반별로 서로 다른 강의를 듣는 선택과목이 생기면 정확한 과목명을 등록하세요
-    (시간표의 과목명과 똑같이 입력해야 합니다).</p>
+  <legend>선택과목(학년별, 전 분반 공통) 관리</legend>
+  <p class="hint">여기 등록한 과목명은 등록한 학년 안에서 분반(반)에 상관없이 그
+    학년 학생 전체에게 결석 과목 선택 목록에 노출됩니다. 3학년 애플리케이션프레임워크/
+    빅데이터프로그래밍, 1학년의 다른 선택과목처럼 분반별로 서로 다른 강의를 듣는
+    선택과목이 생기면 해당 학년에 정확한 과목명을 등록하세요 (시간표의 과목명과
+    똑같이 입력해야 합니다). 같은 과목명이라도 학년마다 따로 등록해야 합니다.</p>
 
   <form method="post" action="{{ url_for('admin_elective_delete') }}" class="js-guard-submit">
     <label>관리자 토큰 <input type="password" name="admin_token" required></label>
-    {% if electives %}
-    <ul class="elective-list">
-      {% for name in electives %}
-      <li>
-        <span>{{ name }}</span>
-        <button type="submit" name="course_name" value="{{ name }}" class="btn danger">삭제</button>
-      </li>
+    {% if electives_by_grade %}
+      {% for grade in ["1", "2", "3", "4"] %}
+      {% if electives_by_grade.get(grade) %}
+      <h4 class="weekday-heading">{{ grade }}학년</h4>
+      <ul class="elective-list">
+        {% for name in electives_by_grade[grade] %}
+        <li>
+          <span>{{ name }}</span>
+          <button type="submit" name="course_name" value="{{ name }}" class="btn danger"
+            onclick="this.form.querySelector('input[name=grade]').value='{{ grade }}';">삭제</button>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
       {% endfor %}
-    </ul>
+      <input type="hidden" name="grade" value="">
     {% else %}
     <p class="empty">등록된 선택과목이 없습니다.</p>
     {% endif %}
@@ -78,6 +86,14 @@
 
   <form method="post" action="{{ url_for('admin_elective_add') }}" class="js-guard-submit elective-add-form">
     <label>관리자 토큰 <input type="password" name="admin_token" required></label>
+    <label>학년
+      <select name="grade" required>
+        <option value="1">1학년</option>
+        <option value="2">2학년</option>
+        <option value="3">3학년</option>
+        <option value="4">4학년</option>
+      </select>
+    </label>
     <label>과목명 <input type="text" name="course_name" placeholder="예: 애플리케이션프레임워크" required></label>
     <button type="submit" class="btn primary">추가</button>
   </form>

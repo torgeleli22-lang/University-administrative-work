@@ -40,7 +40,8 @@
 
 <div class="confirm-actions">
   <button type="button" class="btn" data-close-panel="confirm-panel">← 뒤로</button>
-  <form method="post" action="{{ url_for('generate', student_id=student.id) }}" class="js-guard-submit">
+  <form method="post" action="{{ url_for('generate', student_id=student.id) }}" class="js-guard-submit"
+    data-remember-student="{{ student.student_number }}">
     <input type="hidden" name="reason_code" value="{{ reason_code }}">
     <input type="hidden" name="period_start" value="{{ period_start }}">
     <input type="hidden" name="period_end" value="{{ period_end }}">
