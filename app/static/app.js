@@ -6,25 +6,6 @@
    with JS off) fall back to normal navigation -- the server decides which
    to send based on the X-Partial header these fetches set. */
 window.App = (function () {
-  var LAST_STUDENT_KEY = "lastAppliedStudent";
-
-  function rememberLastStudent(studentNumber) {
-    try {
-      localStorage.setItem(LAST_STUDENT_KEY, studentNumber);
-    } catch (e) {
-      // localStorage can throw (private mode, disabled site data, etc.) --
-      // this is only a convenience, so just skip remembering it.
-    }
-  }
-
-  function getLastStudent() {
-    try {
-      return localStorage.getItem(LAST_STUDENT_KEY) || "";
-    } catch (e) {
-      return "";
-    }
-  }
-
   function hydratePeriodSync(root) {
     root.querySelectorAll(".js-period-start").forEach(function (startInput) {
       if (startInput.dataset.hydrated) return;
@@ -68,11 +49,6 @@ window.App = (function () {
       if (form.dataset.hydrated) return;
       form.dataset.hydrated = "1";
       form.addEventListener("submit", function () {
-        // Not intercepted (this is a plain download-triggering submit), so
-        // this just tags along before the browser proceeds with it.
-        if (form.dataset.rememberStudent) {
-          rememberLastStudent(form.dataset.rememberStudent);
-        }
         var btn = form.querySelector("button[type=submit]");
         if (btn && !btn.disabled) {
           btn.disabled = true;
@@ -270,5 +246,5 @@ window.App = (function () {
     initSpaNav();
   });
 
-  return { hydrateAll: hydrateAll, getLastStudent: getLastStudent };
+  return { hydrateAll: hydrateAll };
 })();

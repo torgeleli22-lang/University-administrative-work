@@ -40,8 +40,7 @@
 
 <div class="confirm-actions">
   <button type="button" class="btn" data-close-panel="confirm-panel">← 뒤로</button>
-  <form method="post" action="{{ url_for('generate', student_id=student.id) }}" class="js-guard-submit"
-    data-remember-student="{{ student.student_number }}">
+  <form method="post" action="{{ url_for('generate', student_id=student.id) }}" class="js-guard-submit">
     <input type="hidden" name="reason_code" value="{{ reason_code }}">
     <input type="hidden" name="period_start" value="{{ period_start }}">
     <input type="hidden" name="period_end" value="{{ period_end }}">
@@ -55,5 +54,7 @@
     {% endfor %}
     <button type="submit" class="btn primary">확인 및 등록 — 한글(.hwpx) 파일 다운로드</button>
   </form>
+  {# 자동으로 넘어가지는 않고, 눌러야만 그 학생의 사용 기록으로 이동한다. #}
+  <a class="btn" href="{{ url_for('records', q=student.student_number) }}">사용 기록 확인</a>
   <a class="btn ghost js-reset-flow" href="{{ url_for('index') }}">처음으로 — 새 학생 검색</a>
 </div>

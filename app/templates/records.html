@@ -26,9 +26,9 @@
 <script>
   // app.js loads with `defer`, so it only finishes running right before
   // DOMContentLoaded -- this whole block waits for that too, since it
-  // calls into window.App (hydrateAll/getLastStudent) itself and would
-  // otherwise run first (plain inline scripts execute immediately as the
-  // parser reaches them, before any deferred script).
+  // calls into window.App (hydrateAll) itself and would otherwise run
+  // first (plain inline scripts execute immediately as the parser reaches
+  // them, before any deferred script).
   document.addEventListener("DOMContentLoaded", function () {
 
   // 검색창에 입력할 때마다 결과 표(#record-results)만 fetch로 갈아끼운다.
@@ -63,17 +63,6 @@
       clearTimeout(timer);
       runSearch();
     });
-
-    // 방금 출석인정허가원을 발급한 학생이 있으면 (생성 확인 폼이 남겨둔
-    // localStorage 값), 검색어를 직접 입력하지 않은 첫 진입 시 그 학생의
-    // 기록으로 바로 조회해 준다.
-    if (!input.value.trim()) {
-      var lastStudent = App.getLastStudent();
-      if (lastStudent) {
-        input.value = lastStudent;
-        runSearch();
-      }
-    }
   })();
 
   // 관리자 토큰을 입력하고 "확인"을 누르면 서버에 실제로 검증한 뒤 전체
