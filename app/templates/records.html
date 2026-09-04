@@ -24,6 +24,13 @@
 </form>
 
 <script>
+  // app.js loads with `defer`, so it only finishes running right before
+  // DOMContentLoaded -- this whole block waits for that too, since it
+  // calls into window.App (hydrateAll/getLastStudent) itself and would
+  // otherwise run first (plain inline scripts execute immediately as the
+  // parser reaches them, before any deferred script).
+  document.addEventListener("DOMContentLoaded", function () {
+
   // 검색창에 입력할 때마다 결과 표(#record-results)만 fetch로 갈아끼운다.
   // 삭제 폼은 그대로 유지되므로 검색 후에도 관리자 토큰 입력값이 지워지지 않는다.
   (function () {
@@ -86,7 +93,8 @@
         return;
       }
       confirmBtn.disabled = true;
-      confirmBtn.textContent = "확인 중...";
+      confirmBtn.classList.add("is-loading");
+      confirmBtn.textContent = "확인 중";
       fetch("/records/admin_view", {
         method: "POST",
         body: new URLSearchParams({ admin_token: token }),
@@ -109,9 +117,12 @@
         })
         .then(function () {
           confirmBtn.disabled = false;
+          confirmBtn.classList.remove("is-loading");
           confirmBtn.textContent = "확인";
         });
     });
   })();
+
+  });
 </script>
 {% endblock %}

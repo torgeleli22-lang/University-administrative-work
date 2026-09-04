@@ -124,12 +124,45 @@ window.App = (function () {
     });
   }
 
+  // Click a sortable <th> (currently just 사용 기록's 수업일 column) to
+  // re-order its table's rows by that column's text, toggling asc/desc on
+  // repeat clicks. class_date cells are plain ISO "YYYY-MM-DD" text, which
+  // sorts correctly as a string, so no date parsing is needed.
+  function hydrateSortableTable(root) {
+    root.querySelectorAll(".js-sort-date").forEach(function (th) {
+      if (th.dataset.hydrated) return;
+      th.dataset.hydrated = "1";
+      th.addEventListener("click", function () {
+        var table = th.closest("table");
+        var tbody = table && table.querySelector("tbody");
+        if (!tbody) return;
+        var idx = Array.prototype.indexOf.call(th.parentNode.children, th);
+        var dir = th.dataset.dir === "asc" ? "desc" : "asc";
+        th.dataset.dir = dir;
+        var rows = Array.prototype.slice.call(tbody.querySelectorAll("tr"));
+        rows.sort(function (a, b) {
+          var av = (a.children[idx] && a.children[idx].textContent || "").trim();
+          var bv = (b.children[idx] && b.children[idx].textContent || "").trim();
+          if (av === bv) return 0;
+          var cmp = av < bv ? -1 : 1;
+          return dir === "asc" ? cmp : -cmp;
+        });
+        rows.forEach(function (r) { tbody.appendChild(r); });
+        table.querySelectorAll(".js-sort-date").forEach(function (h) {
+          h.classList.remove("sort-asc", "sort-desc");
+        });
+        th.classList.add(dir === "asc" ? "sort-asc" : "sort-desc");
+      });
+    });
+  }
+
   function hydrateAll(root) {
     hydratePeriodSync(root);
     hydrateDateSync(root);
     hydrateSubmitGuard(root);
     hydrateAdminGate(root);
     hydrateSelectAll(root);
+    hydrateSortableTable(root);
   }
 
   function showPanel(el) {
@@ -208,6 +241,27 @@ window.App = (function () {
         target.hidden = true;
         target.innerHTML = "";
       }
+    });
+
+    // "처음으로" after a final download: back to a blank 학번/이름 검색,
+    // same page (no reload) when the home page's own containers are here.
+    document.addEventListener("click", function (e) {
+      var link = e.target.closest("a.js-reset-flow");
+      if (!link) return;
+      var searchInput = document.getElementById("search-input");
+      var hero = document.getElementById("search-hero");
+      var results = document.getElementById("results");
+      if (!searchInput || !results) return; // not on the home page -- let it navigate there normally
+      e.preventDefault();
+      clearPanel("student-panel");
+      clearPanel("review-panel");
+      clearPanel("confirm-panel");
+      searchInput.value = "";
+      results.innerHTML = '<p class="empty">학번 또는 이름을 입력해서 학생을 검색하세요.</p>';
+      if (hero) hero.classList.remove("compact");
+      history.replaceState(null, "", "/");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      searchInput.focus();
     });
   }
 

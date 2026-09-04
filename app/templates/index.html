@@ -1,10 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>출석인정허가원 작성</h1>
-<form method="get" class="search-bar" id="search-form">
-  <input type="text" name="q" id="search-input" placeholder="학번 또는 이름으로 검색" value="{{ q }}" autofocus autocomplete="off">
-  <button type="submit" class="btn primary">검색</button>
-</form>
+<div class="search-hero" id="search-hero">
+  <h1>출석인정허가원 작성</h1>
+  <form method="get" class="search-bar" id="search-form">
+    <input type="text" name="q" id="search-input" placeholder="학번 또는 이름으로 검색" value="{{ q }}" autofocus autocomplete="off">
+    <button type="submit" class="btn primary">검색</button>
+  </form>
+</div>
 
 <div id="results">
   {% include "_student_results.html" %}
@@ -21,11 +23,22 @@
   // 입력할 때마다 페이지 전체를 새로고침하지 않고, 결과 부분(#results)만
   // fetch로 새로 받아와서 갈아끼운다. 자바스크립트가 꺼져 있어도 폼 자체가
   // 평소처럼 GET으로 제출되니 검색은 그대로 동작한다.
+  //
+  // 검색창은 처음에는 화면 정가운데(.search-hero)에 크게 떠 있다가, 검색이
+  // 한 번 실행되면 .compact 클래스가 붙으면서 위로 부드럽게 올라간다.
   (function () {
     var input = document.getElementById("search-input");
     var results = document.getElementById("results");
     var form = document.getElementById("search-form");
+    var hero = document.getElementById("search-hero");
     var timer = null;
+
+    // 이미 검색어가 있는 채로 들어온 경우(예: 뒤로가기, ?q= 링크)에는
+    // 가운데 상태였다가 위로 튀어오르는 애니메이션 없이 바로 위쪽 상태로
+    // 시작한다.
+    if (input.value.trim()) {
+      hero.classList.add("compact");
+    }
 
     function runSearch() {
       var q = input.value.trim();
@@ -34,6 +47,7 @@
         .then(function (res) { return res.text(); })
         .then(function (html) {
           results.innerHTML = html;
+          hero.classList.toggle("compact", !!q);
           var newUrl = q ? "/?q=" + encodeURIComponent(q) : "/";
           history.replaceState(null, "", newUrl);
         });
