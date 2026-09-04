@@ -17,11 +17,15 @@ from app.import_real_data import (
     parse_timetable,
 )
 from app.queries import (
+    add_elective_course,
+    delete_elective_course,
+    get_elective_course_names,
     get_makeups_by_course,
     get_slots_by_course,
     get_student_courses,
     get_student_permit_records,
     get_used_hours_by_course,
+    group_courses_by_weekday,
     valid_class_dates,
 )
 from app.seed import seed as seed_dummy_data
@@ -92,6 +96,7 @@ def student_form(student_id):
         "_student_panel.html", "form.html",
         student=student,
         courses=courses,
+        courses_by_weekday=group_courses_by_weekday(courses),
         history=history,
         reasons=REASON_LABELS,
         max_courses=MAX_COURSES,
@@ -484,9 +489,16 @@ def records_delete():
     return redirect(url_for("records", q=q) if q else url_for("records"))
 
 
+def _render_admin_import(term, result):
+    conn = get_conn()
+    electives = get_elective_course_names(conn)
+    conn.close()
+    return render_template("admin_import.html", term=term, result=result, electives=electives)
+
+
 @app.route("/admin/import", methods=["GET"])
 def admin_import_form():
-    return render_template("admin_import.html", term=TERM, result=None)
+    return _render_admin_import(TERM, None)
 
 
 @app.route("/admin/import", methods=["POST"])
@@ -503,7 +515,7 @@ def admin_import():
 
     upload = request.files.get("file")
     if not upload or not upload.filename:
-        return render_template("admin_import.html", term=term, result=["업로드할 파일을 선택해 주세요."])
+        return _render_admin_import(term, ["업로드할 파일을 선택해 주세요."])
 
     conn = get_conn()
     log = []
@@ -541,7 +553,7 @@ def admin_import():
     finally:
         conn.close()
 
-    return render_template("admin_import.html", term=term, result=log)
+    return _render_admin_import(term, log)
 
 
 @app.route("/admin/seed", methods=["POST"])
@@ -551,10 +563,34 @@ def admin_seed():
     verified from the browser alone, before any real .xls is involved."""
     _check_admin_token()
     seed_dummy_data()
-    return render_template(
-        "admin_import.html", term=TERM,
-        result=["데모(더미) 데이터 적재 완료 — 학생 2명, 과목 2개"],
-    )
+    return _render_admin_import(TERM, ["데모(더미) 데이터 적재 완료 — 학생 2명, 과목 2개"])
+
+
+@app.route("/admin/electives/add", methods=["POST"])
+def admin_elective_add():
+    """운영자 페이지: registers a course name (e.g. 3학년 애플리케이션프레임워크)
+    as shown to every student in its grade regardless of section -- see
+    get_student_courses/group_courses_by_weekday in queries.py."""
+    _check_admin_token()
+    course_name = request.form.get("course_name", "").strip()
+    if course_name:
+        conn = get_conn()
+        add_elective_course(conn, course_name)
+        conn.commit()
+        conn.close()
+    return redirect(url_for("admin_import_form"))
+
+
+@app.route("/admin/electives/delete", methods=["POST"])
+def admin_elective_delete():
+    _check_admin_token()
+    course_name = request.form.get("course_name", "").strip()
+    if course_name:
+        conn = get_conn()
+        delete_elective_course(conn, course_name)
+        conn.commit()
+        conn.close()
+    return redirect(url_for("admin_import_form"))
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ query per course, which is what made student/review pages slow before.
 """
 from datetime import timedelta
 
-from app.config import ELECTIVE_COURSE_NAMES, MAX_ABSENCE_PERIODS_PER_COURSE, TERM, WEEKDAY_ORDER
+from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, TERM, WEEKDAY_ORDER
 
 
 def format_schedule(slots):
@@ -137,18 +137,41 @@ def get_student_permit_records(conn, student_id, term=TERM):
     ).fetchall()
 
 
+def get_elective_course_names(conn):
+    """Course names shown to every student in their grade regardless of
+    section -- see db.py's elective_courses table and config.py's old
+    ELECTIVE_COURSE_NAMES comment for why. Managed from the 관리자 업로드
+    page (admin_elective_add/delete in app.py)."""
+    rows = conn.execute("SELECT course_name FROM elective_courses ORDER BY course_name").fetchall()
+    return [r["course_name"] for r in rows]
+
+
+def add_elective_course(conn, course_name):
+    conn.execute(
+        "INSERT INTO elective_courses (course_name) VALUES (%s) ON CONFLICT (course_name) DO NOTHING",
+        (course_name,),
+    )
+
+
+def delete_elective_course(conn, course_name):
+    conn.execute("DELETE FROM elective_courses WHERE course_name = %s", (course_name,))
+
+
 def get_student_courses(conn, student, term=TERM):
     """Courses offered to this student's (grade, section) this term, plus
-    every ELECTIVE_COURSE_NAMES offering in their grade regardless of
-    section (see config.py -- those 분반 letters are elective groups, not
-    the student's homeroom), each annotated with cumulative hours already
-    used and hours still available before hitting the 12시간 cap. Three
-    queries total, regardless of how many courses the student has."""
+    every elective_courses offering in their grade regardless of section
+    (see get_elective_course_names -- those 분반 letters are elective
+    groups, not the student's homeroom), each annotated with cumulative
+    hours already used, hours still available before hitting the 12시간
+    cap, and the individual weekdays it meets on (for grouping in the
+    결석 과목 selection UI). Four queries total, regardless of how many
+    courses the student has."""
+    elective_names = get_elective_course_names(conn)
     rows = conn.execute(
         """SELECT * FROM courses WHERE term=%s AND grade=%s
            AND (section=%s OR course_name = ANY(%s))
            ORDER BY course_name""",
-        (term, student["grade"], student["class_no"], list(ELECTIVE_COURSE_NAMES)),
+        (term, student["grade"], student["class_no"], elective_names),
     ).fetchall()
 
     course_ids = [c["id"] for c in rows]
@@ -157,17 +180,47 @@ def get_student_courses(conn, student, term=TERM):
 
     courses = []
     for c in rows:
-        class_day, class_time = format_schedule(slots_by_course[c["id"]])
+        slots = slots_by_course[c["id"]]  # already sorted by WEEKDAY_ORDER
+        class_day, class_time = format_schedule(slots)
         used_hours = used_by_course[c["id"]]
         remaining = max(0, MAX_ABSENCE_PERIODS_PER_COURSE - used_hours)
+        days = []
+        for s in slots:
+            if s["day"] not in days:
+                days.append(s["day"])
         courses.append({
             "id": c["id"],
             "course_name": c["course_name"],
             "professor": c["professor"],
             "class_day": class_day,
             "class_time": class_time,
+            "days": days,
             "used_hours": used_hours,
             "remaining_hours": remaining,
             "at_limit": remaining <= 0,
         })
     return courses
+
+
+def group_courses_by_weekday(courses):
+    """Groups courses (each with a 'days' list from get_student_courses)
+    by their first weekly meeting day, for the 결석 과목 selection UI --
+    lets the office jump straight to "which courses meet on the day the
+    student was absent" instead of scanning one flat list. A course
+    meeting on more than one day is filed under the earliest of them (its
+    other days are still visible in its own class_day text); a course
+    with no scheduled slot at all lands in a trailing "요일 미정" group.
+    Returns a list of (label, courses) tuples, only for groups that have
+    at least one course."""
+    by_day = {d: [] for d in WEEKDAY_ORDER}
+    unscheduled = []
+    for c in courses:
+        if not c["days"]:
+            unscheduled.append(c)
+        else:
+            by_day[c["days"][0]].append(c)
+
+    groups = [(f"{d}요일", by_day[d]) for d in WEEKDAY_ORDER if by_day[d]]
+    if unscheduled:
+        groups.append(("요일 미정", unscheduled))
+    return groups

@@ -91,6 +91,15 @@ SCHEMA = [
         UNIQUE (course_id, cancelled_date, makeup_date)
     )
     """,
+    # Course names shown to every student in their grade regardless of
+    # section (see config.py's old ELECTIVE_COURSE_NAMES comment) --
+    # editable from the 관리자 업로드 page instead of hardcoded, so a new
+    # term's electives don't need a code change/redeploy.
+    """
+    CREATE TABLE IF NOT EXISTS elective_courses (
+        course_name TEXT PRIMARY KEY
+    )
+    """,
 ]
 
 # CREATE TABLE IF NOT EXISTS only helps on a brand-new database -- it's a
@@ -117,6 +126,16 @@ MIGRATIONS = [
     """,
     "CREATE UNIQUE INDEX IF NOT EXISTS course_slots_unique_idx "
     "ON course_slots (course_id, day, period_start, period_end)",
+    # One-time seed for the deployments that already had these two
+    # hardcoded in ELECTIVE_COURSE_NAMES before it moved into this table --
+    # only fires while the table is still completely empty, so it never
+    # re-adds a name an admin has since deleted (this runs on every
+    # startup, same as every other migration here).
+    """
+    INSERT INTO elective_courses (course_name)
+    SELECT name FROM (VALUES ('애플리케이션프레임워크'), ('빅데이터프로그래밍')) AS v(name)
+    WHERE NOT EXISTS (SELECT 1 FROM elective_courses)
+    """,
 ]
 
 

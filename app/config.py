@@ -23,9 +23,11 @@ PERIOD_CHOICES = list(range(1, 13))
 # courses (the whole homeroom takes them together) but wrong for electives
 # -- students choose one of several parallel offerings and the 분반 letter
 # on each offering is really just an elective-group label, not the
-# student's actual homeroom. Any course whose name is listed here is shown
-# to every student in its grade regardless of section, in addition to
-# students in its own listed section. Update this each term as electives
-# change (there is no marker for "이 과목은 선택과목이다" in the timetable
-# file itself, so this has to be maintained by hand).
-ELECTIVE_COURSE_NAMES = {"애플리케이션프레임워크", "빅데이터프로그래밍"}
+# student's actual homeroom. Any course whose name is in the DB's
+# elective_courses table (managed from the 관리자 업로드 page, see
+# app.py's admin_elective_add/delete) is shown to every student in its
+# grade regardless of section, in addition to students in its own listed
+# section. This used to be a hardcoded set here; these two are only the
+# seed values a fresh DB starts with (see db.py's MIGRATIONS) so upgrading
+# an existing deployment doesn't silently drop what was already working.
+DEFAULT_ELECTIVE_COURSE_NAMES = {"애플리케이션프레임워크", "빅데이터프로그래밍"}

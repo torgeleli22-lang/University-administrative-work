@@ -166,6 +166,17 @@ table.student-table {
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-2);
 }
+
+.weekday-group { margin-top: var(--space-4); }
+.weekday-group:first-of-type { margin-top: var(--space-2); }
+.weekday-heading {
+  margin: 0 0 var(--space-2);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
 .option-body { display: flex; flex-direction: column; gap: 3px; }
 .option-title { font-weight: 600; }
 .option-meta { font-size: 0.82rem; color: var(--text-muted); }
@@ -363,6 +374,27 @@ input[type="file"] {
 fieldset label input:focus-visible, fieldset label select:focus-visible {
   outline: none; /* the box-shadow glow above already signals focus */
 }
+
+.elective-list {
+  list-style: none;
+  margin: var(--space-3) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.elective-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fafafd;
+  font-size: 0.9rem;
+}
+.elective-add-form { margin-top: var(--space-3); }
 
 .bulk-actions-row {
   display: flex;

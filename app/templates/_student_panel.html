@@ -68,22 +68,29 @@
   <fieldset>
     <legend>결석 과목 (최대 {{ max_courses }}개, 과목당 누적 최대 {{ max_absence_periods }}시간까지)</legend>
     {% if courses %}
-      <div class="option-grid">
-      {% for c in courses %}
-      <label class="checkbox-row {{ 'disabled' if c.at_limit }}">
-        <input type="checkbox" name="course_ids" value="{{ c.id }}" {% if c.at_limit %}disabled{% endif %}>
-        <span class="option-body">
-          <span class="option-title">{{ c.course_name }} — {{ c.professor }} 교수</span>
-          <span class="option-meta">{{ c.class_day }} / {{ c.class_time }}</span>
-          {% if c.at_limit %}
-            <span class="badge">누적 {{ c.used_hours }}시간 — 신청 불가</span>
-          {% elif c.used_hours > 0 %}
-            <span class="badge ok">누적 {{ c.used_hours }}시간 사용, {{ c.remaining_hours }}시간 남음</span>
-          {% endif %}
-        </span>
-      </label>
-      {% endfor %}
+      <p class="hint">결석한 요일별로 묶어서 보여줍니다 — 두 요일에 걸쳐 열리는 과목은
+        그 중 첫 요일 아래에 있습니다 (다른 요일은 과목 설명에 함께 표시됩니다).</p>
+      {% for day_label, day_courses in courses_by_weekday %}
+      <div class="weekday-group">
+        <h4 class="weekday-heading">{{ day_label }}</h4>
+        <div class="option-grid">
+        {% for c in day_courses %}
+        <label class="checkbox-row {{ 'disabled' if c.at_limit }}">
+          <input type="checkbox" name="course_ids" value="{{ c.id }}" {% if c.at_limit %}disabled{% endif %}>
+          <span class="option-body">
+            <span class="option-title">{{ c.course_name }} — {{ c.professor }} 교수</span>
+            <span class="option-meta">{{ c.class_day }} / {{ c.class_time }}</span>
+            {% if c.at_limit %}
+              <span class="badge">누적 {{ c.used_hours }}시간 — 신청 불가</span>
+            {% elif c.used_hours > 0 %}
+              <span class="badge ok">누적 {{ c.used_hours }}시간 사용, {{ c.remaining_hours }}시간 남음</span>
+            {% endif %}
+          </span>
+        </label>
+        {% endfor %}
+        </div>
       </div>
+      {% endfor %}
     {% else %}
       <p class="empty">등록된 수강 과목이 없습니다. 관리자에게 문의하세요.</p>
     {% endif %}
