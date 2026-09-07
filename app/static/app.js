@@ -158,10 +158,31 @@ window.App = (function () {
     }
   }
 
+  // Surfaces a server-rendered error (see _error_fragment.html) inline next
+  // to the form the user just submitted, instead of losing that form's
+  // content -- errorEl is inserted at the top of `container` and replaces
+  // any earlier one there, so re-submitting doesn't stack up messages.
+  function showFormError(container, html) {
+    clearFormError(container);
+    var wrapper = document.createElement("div");
+    wrapper.className = "js-form-error";
+    wrapper.innerHTML = html;
+    container.insertBefore(wrapper, container.firstChild);
+    wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  function clearFormError(container) {
+    var existing = container.querySelector(".js-form-error");
+    if (existing) existing.remove();
+  }
+
   // Generic "submit this form into that panel" used for both apply-flow
   // steps (student -> review -> confirm): each fetches its target panel
   // with X-Partial so it gets back just the fragment, and clears whatever
-  // comes after it in the flow since that content is now stale.
+  // comes after it in the flow since that content is now stale. A failed
+  // submission (e.g. 12시간 한도 초과) leaves the target panel closed again
+  // and shows the error next to the form itself, so nothing already
+  // entered is lost.
   function wireStepForm(formClass, panelId, clearIds) {
     document.addEventListener("submit", function (e) {
       var form = e.target.closest("form." + formClass);
@@ -169,6 +190,8 @@ window.App = (function () {
       var panel = document.getElementById(panelId);
       if (!panel) return; // fallback: normal submit -> full page for this step
       e.preventDefault();
+      var sourcePanel = form.closest(".panel") || form.parentElement;
+      clearFormError(sourcePanel);
       clearIds.forEach(clearPanel);
       setLoading(panel);
       panel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -177,11 +200,18 @@ window.App = (function () {
         headers: { "X-Partial": "1" },
         body: new FormData(form),
       })
-        .then(function (res) { return res.text(); })
-        .then(function (html) {
-          panel.innerHTML = html;
-          showPanel(panel);
-          hydrateAll(panel);
+        .then(function (res) {
+          return res.text().then(function (html) { return { ok: res.ok, html: html }; });
+        })
+        .then(function (result) {
+          if (result.ok) {
+            panel.innerHTML = result.html;
+            showPanel(panel);
+            hydrateAll(panel);
+          } else {
+            clearPanel(panelId);
+            showFormError(sourcePanel, result.html);
+          }
         });
     });
   }
@@ -246,5 +276,5 @@ window.App = (function () {
     initSpaNav();
   });
 
-  return { hydrateAll: hydrateAll };
+  return { hydrateAll: hydrateAll, showFormError: showFormError, clearFormError: clearFormError };
 })();

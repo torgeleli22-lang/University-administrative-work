@@ -74,11 +74,13 @@
     var verifiedFlag = document.getElementById("records-verified");
     var results = document.getElementById("record-results");
     var searchInput = document.getElementById("records-search-input");
+    var tokenRow = document.querySelector(".admin-token-row");
 
     confirmBtn.addEventListener("click", function () {
       var token = tokenInput.value.trim();
+      App.clearFormError(tokenRow);
       if (!token) {
-        alert("관리자 토큰을 입력해 주세요.");
+        App.showFormError(tokenRow, "<div class=\"form-error\"><p>관리자 토큰을 입력해 주세요.</p></div>");
         return;
       }
       confirmBtn.disabled = true;
@@ -102,7 +104,7 @@
         .catch(function () {
           verifiedFlag.value = "";
           App.hydrateAll(results);
-          alert("관리자 토큰이 올바르지 않습니다.");
+          App.showFormError(tokenRow, "<div class=\"form-error\"><p>관리자 토큰이 올바르지 않습니다.</p></div>");
         })
         .then(function () {
           confirmBtn.disabled = false;

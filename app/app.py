@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 
 from flask import Flask, abort, redirect, render_template, request, send_file, url_for
+from werkzeug.exceptions import HTTPException
 
 from app.config import MAX_ABSENCE_PERIODS_PER_COURSE, PERIOD_CHOICES, TERM
 from app.db import get_conn, init_db
@@ -54,6 +55,22 @@ def render_maybe_partial(partial_template, full_template, **ctx):
     return render_template(template, **ctx)
 
 
+@app.errorhandler(400)
+@app.errorhandler(403)
+@app.errorhandler(404)
+def handle_user_facing_error(e):
+    """abort(code, message) calls throughout this file (12시간 한도 초과,
+    잘못된 날짜/교시 선택, 존재하지 않는 학생 등) would otherwise render as a
+    raw, unstyled Flask/Werkzeug error page -- both full-page (a direct
+    request) and, worse, injected via innerHTML into an apply-flow panel
+    (a fetch() call with X-Partial set). This intercepts both cases and
+    renders something that actually fits the rest of the page."""
+    message = e.description if isinstance(e, HTTPException) else str(e)
+    if request.headers.get("X-Partial") == "1":
+        return render_template("_error_fragment.html", message=message), e.code
+    return render_template("error.html", code=e.code, message=message), e.code
+
+
 def _search_students(q):
     if not q:
         return []
@@ -89,7 +106,7 @@ def student_form(student_id):
     ).fetchone()
     if student is None:
         conn.close()
-        abort(404)
+        abort(404, "해당 학생을 찾을 수 없습니다.")
     courses = get_student_courses(conn, student)
     history = get_student_permit_records(conn, student_id)
     conn.close()
@@ -150,7 +167,7 @@ def review(student_id):
     ).fetchone()
     if student is None:
         conn.close()
-        abort(404)
+        abort(404, "해당 학생을 찾을 수 없습니다.")
 
     reason_code = _parse_reason_code(request.form)
     period_start, period_end = _parse_period(request.form)
@@ -329,7 +346,7 @@ def confirm(student_id):
     ).fetchone()
     if student is None:
         conn.close()
-        abort(404)
+        abort(404, "해당 학생을 찾을 수 없습니다.")
 
     reason_code = _parse_reason_code(request.form)
     period_start, period_end = _parse_period(request.form)
@@ -359,7 +376,7 @@ def generate(student_id):
     ).fetchone()
     if student is None:
         conn.close()
-        abort(404)
+        abort(404, "해당 학생을 찾을 수 없습니다.")
 
     reason_code = _parse_reason_code(request.form)
     period_start, period_end = _parse_period(request.form)
@@ -535,6 +552,20 @@ def _check_admin_token():
         abort(403, "관리자 토큰이 올바르지 않습니다.")
 
 
+def _admin_token_ok():
+    """Same check as _check_admin_token, but returns (ok, error_message)
+    instead of aborting -- used by the plain (non-fetch) admin forms below
+    so a wrong token re-renders the admin page with an inline message
+    instead of a raw error page taking over the whole tab."""
+    expected = os.environ.get("ADMIN_TOKEN")
+    if not expected:
+        return False, ("서버에 ADMIN_TOKEN 환경변수가 설정되어 있지 않습니다. "
+                        "Render 서비스의 Environment 설정에 ADMIN_TOKEN을 추가해 주세요.")
+    if request.form.get("admin_token") != expected:
+        return False, "관리자 토큰이 올바르지 않습니다."
+    return True, None
+
+
 @app.route("/records/delete", methods=["POST"])
 def records_delete():
     """Three ways to delete, all admin-token gated: a single row
@@ -586,8 +617,10 @@ def admin_import():
     disk. Only one file type is picked from the file_type dropdown per
     upload, and only that type's data is touched -- picking 학과별 시간표
     never accidentally clears the roster, for example."""
-    _check_admin_token()
     term = request.form.get("term") or TERM
+    ok, err = _admin_token_ok()
+    if not ok:
+        return _render_admin_import(term, [err])
     file_type = request.form.get("file_type", "")
 
     upload = request.files.get("file")
@@ -638,7 +671,9 @@ def admin_seed():
     """No-file version of /admin/import: loads the small built-in demo
     dataset (app/seed.py) so the whole GitHub->Neon->Render chain can be
     verified from the browser alone, before any real .xls is involved."""
-    _check_admin_token()
+    ok, err = _admin_token_ok()
+    if not ok:
+        return _render_admin_import(TERM, [err])
     seed_dummy_data()
     return _render_admin_import(TERM, ["데모(더미) 데이터 적재 완료 — 학생 2명, 과목 2개"])
 
@@ -650,7 +685,9 @@ def admin_elective_add():
     get_student_courses/group_courses_by_weekday in queries.py. Grade-scoped
     so the same course name can be a different elective in a different
     grade without conflicting."""
-    _check_admin_token()
+    ok, err = _admin_token_ok()
+    if not ok:
+        return _render_admin_import(TERM, [err])
     grade = request.form.get("grade", "").strip()
     course_name = request.form.get("course_name", "").strip()
     if grade in {"1", "2", "3", "4"} and course_name:
@@ -663,7 +700,9 @@ def admin_elective_add():
 
 @app.route("/admin/electives/delete", methods=["POST"])
 def admin_elective_delete():
-    _check_admin_token()
+    ok, err = _admin_token_ok()
+    if not ok:
+        return _render_admin_import(TERM, [err])
     grade = request.form.get("grade", "").strip()
     course_name = request.form.get("course_name", "").strip()
     if grade in {"1", "2", "3", "4"} and course_name:

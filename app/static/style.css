@@ -476,6 +476,7 @@ fieldset label input:focus-visible, fieldset label select:focus-visible {
   font-weight: 600;
 }
 .admin-token-row .hint { margin: 0; flex-basis: 100%; }
+.admin-token-row .js-form-error { flex-basis: 100%; }
 
 .empty {
   color: var(--text-muted);
@@ -535,6 +536,37 @@ fieldset label input:focus-visible, fieldset label select:focus-visible {
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Server-rendered validation/auth errors (_error_fragment.html) shown
+   inline instead of a raw error page or an alert() dialog -- see
+   App.showFormError in app.js. */
+.form-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  font-size: 0.88rem;
+  font-weight: 600;
+  animation: panel-in 0.15s ease;
+}
+.form-error p { margin: 0; }
+
+/* Full-page fallback (error.html) for errors hit via plain navigation,
+   e.g. the final 확인 및 등록 submit (a real file download, not fetched). */
+.error-page {
+  max-width: 480px;
+  margin: var(--space-6) auto;
+  padding: var(--space-5);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  text-align: center;
+}
+.error-page h1 { margin-top: 0; font-size: 1.1rem; color: var(--danger); }
+.error-page p { color: var(--text-muted); margin-bottom: var(--space-5); }
 
 form { margin: 0; }
 
