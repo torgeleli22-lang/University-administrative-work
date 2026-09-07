@@ -60,6 +60,16 @@ def kst_date(dt):
     return f"{local:%Y-%m-%d} ({WEEKDAY_LABELS[local.weekday()]})"
 
 
+@app.template_filter("weekday_label")
+def weekday_label(class_date_iso):
+    """class_date is stored as plain 'YYYY-MM-DD' text (a school calendar
+    date, not a timestamp -- no timezone conversion needed here). 사용
+    기록's 수업일 column adds this next to the date so it's clear which
+    weekday's class was missed without doing the date math by hand."""
+    d = datetime.strptime(class_date_iso, "%Y-%m-%d").date()
+    return WEEKDAY_LABELS[d.weekday()]
+
+
 def render_maybe_partial(partial_template, full_template, **ctx):
     """The single-page apply flow's own fetch() calls set X-Partial so they
     get back just the fragment to inject; a plain browser navigation (JS
@@ -462,10 +472,59 @@ def _search_records(q):
     return rows
 
 
+def _group_submissions(records):
+    """One /generate call inserts one permit_records row per (course, date)
+    instance but they all share the same (student_id, created_at) -- see
+    records_reprint's own docstring on why that pair reliably identifies
+    "everything from one submission". _search_records/_all_records already
+    order by created_at DESC, student_id, id, so rows from the same
+    submission are always consecutive; this just folds those runs into one
+    dict each so 사용 기록 can render one card per generated 허가원 instead
+    of a flat table that only looks grouped by visual proximity."""
+    groups = []
+    current_key = None
+    for r in records:
+        key = (r["student_id"], r["created_at"])
+        if key != current_key:
+            current_key = key
+            groups.append({
+                "student_id": r["student_id"],
+                "created_at": r["created_at"],
+                "student_number": r["student_number"],
+                "name": r["name"],
+                "grade": r["grade"],
+                "class_no": r["class_no"],
+                "reason_code": r["reason_code"],
+                "rows": [],
+            })
+        groups[-1]["rows"].append(r)
+    return groups
+
+
+def _course_hour_summary(records):
+    """과목별 누적시간 팝업: this term's total periods_missed per course,
+    across every submission in `records` (already scoped to one student by
+    the time this is shown -- see the student_numbers|length==1 check)."""
+    totals = {}
+    order = []
+    for r in records:
+        key = r["course_name"]
+        if key not in totals:
+            totals[key] = {"course_name": r["course_name"], "professor": r["professor"], "hours": 0}
+            order.append(key)
+        totals[key]["hours"] += r["periods_missed"]
+    return [totals[k] for k in order]
+
+
 @app.route("/records")
 def records():
     q = request.args.get("q", "").strip()
-    return render_template("records.html", records=_search_records(q), q=q, reasons=REASON_LABELS, term=TERM)
+    found = _search_records(q)
+    return render_template(
+        "records.html", records=found, submissions=_group_submissions(found),
+        course_summary=_course_hour_summary(found), q=q, reasons=REASON_LABELS, term=TERM,
+        max_absence_periods=MAX_ABSENCE_PERIODS_PER_COURSE,
+    )
 
 
 @app.route("/records/search")
@@ -473,7 +532,12 @@ def records_search():
     """Partial-page endpoint the 사용 기록 search box fetches into, mirroring
     /students/search on the home page."""
     q = request.args.get("q", "").strip()
-    return render_template("_records_results.html", records=_search_records(q), q=q, reasons=REASON_LABELS)
+    found = _search_records(q)
+    return render_template(
+        "_records_results.html", records=found, submissions=_group_submissions(found),
+        course_summary=_course_hour_summary(found), q=q, reasons=REASON_LABELS,
+        max_absence_periods=MAX_ABSENCE_PERIODS_PER_COURSE,
+    )
 
 
 @app.route("/records/reprint/<int:student_id>")
@@ -557,7 +621,12 @@ def records_admin_view():
     neither, so viewing everyone's records and deleting both require the
     same real server-side check, not just a non-empty text field."""
     _check_admin_token()
-    return render_template("_records_results.html", records=_all_records(), q="", verified=True, reasons=REASON_LABELS)
+    found = _all_records()
+    return render_template(
+        "_records_results.html", records=found, submissions=_group_submissions(found),
+        course_summary=_course_hour_summary(found), q="", verified=True, reasons=REASON_LABELS,
+        max_absence_periods=MAX_ABSENCE_PERIODS_PER_COURSE,
+    )
 
 
 def _check_admin_token():

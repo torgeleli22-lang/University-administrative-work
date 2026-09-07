@@ -460,10 +460,49 @@ fieldset label input:focus-visible, fieldset label select:focus-visible {
 
 .bulk-actions-row {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
   margin-bottom: var(--space-3);
 }
+.select-all-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: var(--space-2);
+}
+
+/* 사용 기록: one card per generated 출석인정허가원 (one /generate call can
+   cover several 과목/수업일 at once) instead of a flat table where only
+   row order hints at what belongs together. */
+.record-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.record-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4);
+}
+.record-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+.record-card-title { font-size: 0.95rem; }
+.record-card-title strong { margin-right: 4px; }
+.record-card-title .hint { margin: 2px 0 0; }
+.record-card .table-scroll { box-shadow: none; }
+.record-card table.student-table { box-shadow: none; }
 
 .admin-token-row {
   display: flex;
@@ -621,6 +660,22 @@ fieldset label input:focus-visible, fieldset label select:focus-visible {
 }
 .error-page h1 { margin-top: 0; font-size: 1.1rem; color: var(--danger); }
 .error-page p { color: var(--text-muted); margin-bottom: var(--space-5); }
+
+/* 사용 기록의 "과목별 누적시간 보기" popup -- a native <dialog>, opened via
+   .showModal() (see hydrateDialogs in app.js). */
+dialog.course-summary-dialog {
+  width: min(480px, calc(100vw - 2 * var(--space-4)));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-5);
+  color: var(--text);
+}
+dialog.course-summary-dialog::backdrop {
+  background: rgba(20, 21, 40, 0.45);
+}
+dialog.course-summary-dialog table.student-table td:last-child { white-space: normal; }
+dialog.course-summary-dialog .badge { margin-left: 6px; }
 
 form { margin: 0; }
 

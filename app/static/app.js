@@ -132,6 +132,32 @@ window.App = (function () {
     });
   }
 
+  // Generic <dialog>-based popup: a .js-dialog-open button's data-dialog-
+  // target names the <dialog> id to open (currently just 사용 기록's 과목별
+  // 누적시간 보기 button), and any .js-dialog-close inside a <dialog>
+  // closes its own closest dialog. Clicking the ::backdrop (outside the
+  // dialog's own box) closes it too, matching normal modal expectations.
+  function hydrateDialogs(root) {
+    root.querySelectorAll(".js-dialog-open").forEach(function (btn) {
+      if (btn.dataset.hydrated) return;
+      btn.dataset.hydrated = "1";
+      btn.addEventListener("click", function () {
+        var dialog = document.getElementById(btn.dataset.dialogTarget);
+        if (dialog) dialog.showModal();
+      });
+    });
+    root.querySelectorAll("dialog").forEach(function (dialog) {
+      if (dialog.dataset.hydrated) return;
+      dialog.dataset.hydrated = "1";
+      dialog.addEventListener("click", function (e) {
+        if (e.target === dialog) dialog.close();
+      });
+      dialog.querySelectorAll(".js-dialog-close").forEach(function (btn) {
+        btn.addEventListener("click", function () { dialog.close(); });
+      });
+    });
+  }
+
   function hydrateAll(root) {
     hydratePeriodSync(root);
     hydrateDateSync(root);
@@ -139,6 +165,7 @@ window.App = (function () {
     hydrateAdminGate(root);
     hydrateSelectAll(root);
     hydrateSortableTable(root);
+    hydrateDialogs(root);
   }
 
   function showPanel(el) {
