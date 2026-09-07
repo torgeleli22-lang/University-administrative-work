@@ -38,6 +38,36 @@ TEMPLATE_HWPX = Path(__file__).resolve().parent / "assets" / "attendance_permit_
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # xls uploads are small; 20MB is a generous cap
 
+
+@app.before_request
+def _redirect_http_to_https():
+    """Render's own edge already terminates TLS and only serves
+    *.onrender.com over HTTPS, so this should never actually fire there --
+    it's a defense-in-depth safety net for a custom domain or a different
+    host in front of this app someday. Render's proxy sets
+    X-Forwarded-Proto to the protocol the *client* actually used; when
+    that's absent (plain `flask run` in local dev) this does nothing, so
+    it can't break local testing."""
+    if request.headers.get("X-Forwarded-Proto", "https") == "http":
+        return redirect(request.url.replace("http://", "https://", 1), code=301)
+
+
+@app.after_request
+def _set_security_headers(response):
+    """Student 결석 사유 (때로는 질병/사망 등 민감한 내용) travels through
+    this response on every apply-flow/사용 기록 page, so these headers
+    matter more here than on a typical demo app: HSTS tells the browser
+    to never fall back to plain HTTP for this origin again (even if
+    someone types http:// or an old bookmark points there), and the rest
+    are standard hardening that costs nothing to include."""
+    response.headers.setdefault(
+        "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+    )
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return response
+
 # Runs on every import, not just `python app.py` -- gunicorn (used in
 # production, see Procfile) imports this module and never executes the
 # __main__ block below, so this is the only place guaranteed to run before
