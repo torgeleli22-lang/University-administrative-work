@@ -160,14 +160,18 @@ window.App = (function () {
 
   // Surfaces a server-rendered error (see _error_fragment.html) inline next
   // to the form the user just submitted, instead of losing that form's
-  // content -- errorEl is inserted at the top of `container` and replaces
-  // any earlier one there, so re-submitting doesn't stack up messages.
+  // content -- inserted right after the panel's heading (so the title and
+  // step indicator stay on top instead of being pushed down by it), and
+  // replaces any earlier one there so re-submitting doesn't stack up
+  // messages.
   function showFormError(container, html) {
     clearFormError(container);
     var wrapper = document.createElement("div");
     wrapper.className = "js-form-error";
     wrapper.innerHTML = html;
-    container.insertBefore(wrapper, container.firstChild);
+    var head = container.querySelector(".panel-head");
+    var anchor = head ? head.nextSibling : container.firstChild;
+    container.insertBefore(wrapper, anchor);
     wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 

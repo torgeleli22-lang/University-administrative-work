@@ -1,0 +1,16 @@
+{# `step` (1/2/3) marks where we are in the apply flow (학생 정보 -> 결석
+   교시 선택 -> 최종 확인). Included at the top of each of the three panel
+   fragments so it's rendered both in the single-page flow (injected via
+   fetch) and on a direct/no-JS page load (form.html/review.html/confirm.html
+   just {% include %} the same fragment). #}
+<ol class="step-indicator">
+  <li class="{{ 'is-done' if step > 1 else 'is-active' if step == 1 else '' }}">
+    <span class="step-num">1</span><span class="step-label">학생 정보</span>
+  </li>
+  <li class="{{ 'is-done' if step > 2 else 'is-active' if step == 2 else '' }}">
+    <span class="step-num">2</span><span class="step-label">결석 교시 선택</span>
+  </li>
+  <li class="{{ 'is-done' if step > 3 else 'is-active' if step == 3 else '' }}">
+    <span class="step-num">3</span><span class="step-label">최종 확인</span>
+  </li>
+</ol>

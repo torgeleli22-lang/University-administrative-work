@@ -18,7 +18,7 @@
 <form method="post" action="{{ url_for('admin_import') }}" enctype="multipart/form-data" class="js-guard-submit">
   <fieldset>
     <legend>관리자 인증</legend>
-    <label>관리자 토큰 <input type="password" name="admin_token" required></label>
+    <label>관리자 토큰 <input type="password" name="admin_token" class="js-admin-token-sync" required></label>
     <label>학기 <input type="text" name="term" value="{{ term }}" required></label>
   </fieldset>
 
@@ -62,7 +62,7 @@
     똑같이 입력해야 합니다). 같은 과목명이라도 학년마다 따로 등록해야 합니다.</p>
 
   <form method="post" action="{{ url_for('admin_elective_delete') }}" class="js-guard-submit">
-    <label>관리자 토큰 <input type="password" name="admin_token" required></label>
+    <label>관리자 토큰 <input type="password" name="admin_token" class="js-admin-token-sync" required></label>
     {% if electives_by_grade %}
       {% for grade in ["1", "2", "3", "4"] %}
       {% if electives_by_grade.get(grade) %}
@@ -85,7 +85,7 @@
   </form>
 
   <form method="post" action="{{ url_for('admin_elective_add') }}" class="js-guard-submit elective-add-form">
-    <label>관리자 토큰 <input type="password" name="admin_token" required></label>
+    <label>관리자 토큰 <input type="password" name="admin_token" class="js-admin-token-sync" required></label>
     <label>학년
       <select name="grade" required>
         <option value="1">1학년</option>
@@ -104,7 +104,7 @@
   <p class="hint">실제 파일 없이 학생 2명 + 과목 2개짜리 테스트 데이터를 넣어봅니다.
     배포가 제대로 연결됐는지 먼저 확인할 때 씁니다.</p>
   <form method="post" action="{{ url_for('admin_seed') }}" class="js-guard-submit">
-    <label>관리자 토큰 <input type="password" name="admin_token" required></label>
+    <label>관리자 토큰 <input type="password" name="admin_token" class="js-admin-token-sync" required></label>
     <button type="submit" class="btn">데모 데이터 넣기</button>
   </form>
 </fieldset>
@@ -128,6 +128,20 @@
 
     typeSelect.addEventListener("change", sync);
     sync();
+  })();
+
+  // 이 페이지엔 관리자 토큰 입력칸이 폼마다 따로 있지만(각각 다른 곳으로
+  // POST되므로), 매번 다시 입력하지 않도록 하나에 입력하면 나머지 칸에도
+  // 그대로 채워준다.
+  (function () {
+    var tokenInputs = document.querySelectorAll(".js-admin-token-sync");
+    tokenInputs.forEach(function (input) {
+      input.addEventListener("input", function () {
+        tokenInputs.forEach(function (other) {
+          if (other !== input) other.value = input.value;
+        });
+      });
+    });
   })();
 </script>
 {% endblock %}

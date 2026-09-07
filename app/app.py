@@ -134,6 +134,7 @@ def student_form(student_id):
         max_courses=MAX_COURSES,
         max_absence_periods=MAX_ABSENCE_PERIODS_PER_COURSE,
         today=date.today().isoformat(),
+        step=1,
     )
 
 
@@ -242,6 +243,7 @@ def review(student_id):
         reviewable=reviewable,
         blocked=blocked,
         max_absence_periods=MAX_ABSENCE_PERIODS_PER_COURSE,
+        step=2,
     )
 
 
@@ -379,6 +381,7 @@ def confirm(student_id):
         period_end=period_end.isoformat(),
         selected=selected,
         total_hours=sum(c["periods_missed"] for c in selected),
+        step=3,
     )
 
 

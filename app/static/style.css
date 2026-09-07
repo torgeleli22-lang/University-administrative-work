@@ -517,6 +517,60 @@ fieldset label input:focus-visible, fieldset label select:focus-visible {
   margin-bottom: var(--space-4);
 }
 
+/* 학생 정보 -> 결석 교시 선택 -> 최종 확인, shown at the top of every step
+   of the apply flow (_step_indicator.html) so it's always clear how far
+   along the process is and what's left. */
+.step-indicator {
+  display: flex;
+  list-style: none;
+  margin: 0 0 var(--space-5);
+  padding: 0;
+}
+.step-indicator li {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  position: relative;
+}
+.step-indicator li:not(:last-child)::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-strong);
+  margin: 0 var(--space-2);
+}
+.step-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.step-indicator li.is-active .step-num {
+  background: var(--primary);
+  color: #fff;
+}
+.step-indicator li.is-active { color: var(--text); }
+.step-indicator li.is-done .step-num {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.step-indicator li.is-done { color: var(--text-muted); }
+.step-label { white-space: nowrap; }
+@media (max-width: 560px) {
+  .step-label { display: none; }
+}
+
 .loading {
   color: var(--text-muted);
   padding: var(--space-5);
