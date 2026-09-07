@@ -87,6 +87,24 @@ window.App = (function () {
     applyAdminGate(root);
   }
 
+  // 관리자 토큰 입력칸은 영문/숫자/기호로만 구성되므로, 한글(이나 다른
+  // 비-ASCII 문자)이 IME 조합이나 붙여넣기로 들어오면 그 즉시 걸러낸다.
+  // 'input' 이벤트는 조합이 끝난 뒤(또는 붙여넣기 직후)에도 발생하므로
+  // 매번 실행해 결과 문자열에서 비-ASCII만 제거하면 된다.
+  function hydrateAsciiOnly(root) {
+    root.querySelectorAll(".js-ascii-only").forEach(function (input) {
+      // A distinct guard key, not the shared "hydrated" one -- this class
+      // coexists with .js-admin-token on the same <input>, and that
+      // element's own hydrateAdminGate already claims "hydrated" first.
+      if (input.dataset.asciiHydrated) return;
+      input.dataset.asciiHydrated = "1";
+      input.addEventListener("input", function () {
+        var stripped = input.value.replace(/[^\x00-\x7F]/g, "");
+        if (stripped !== input.value) input.value = stripped;
+      });
+    });
+  }
+
   function hydrateSelectAll(root) {
     root.querySelectorAll(".js-select-all").forEach(function (master) {
       if (master.dataset.hydrated) return;
@@ -163,6 +181,7 @@ window.App = (function () {
     hydrateDateSync(root);
     hydrateSubmitGuard(root);
     hydrateAdminGate(root);
+    hydrateAsciiOnly(root);
     hydrateSelectAll(root);
     hydrateSortableTable(root);
     hydrateDialogs(root);
