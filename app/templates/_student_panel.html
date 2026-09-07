@@ -30,7 +30,7 @@
       {% set ns = namespace(last_key=None) %}
       {% for r in history %}
       <tr>
-        <td>{{ r.created_at }}</td>
+        <td>{{ r.created_at | kst_date }}</td>
         <td>{{ r.course_name }}</td>
         <td>{{ r.professor }}</td>
         <td>{{ reasons[r.reason_code] }}</td>

@@ -2,6 +2,7 @@ import os
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from flask import Flask, abort, redirect, render_template, request, send_file, url_for
 from werkzeug.exceptions import HTTPException
@@ -44,6 +45,19 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # xls uploads are small; 20
 # are cheap and safe to repeat, so this also self-heals a DB that's behind
 # on schema changes (see app/db.py's MIGRATIONS).
 init_db()
+
+
+KST = ZoneInfo("Asia/Seoul")
+WEEKDAY_LABELS = "월화수목금토일"
+
+
+@app.template_filter("kst_date")
+def kst_date(dt):
+    """permit_records.created_at is stored as TIMESTAMPTZ (UTC) -- 사용
+    기록's 생성일시 column shows it converted to KST as e.g. "2026-09-07
+    (월)" rather than a raw UTC timestamp with microseconds."""
+    local = dt.astimezone(KST)
+    return f"{local:%Y-%m-%d} ({WEEKDAY_LABELS[local.weekday()]})"
 
 
 def render_maybe_partial(partial_template, full_template, **ctx):

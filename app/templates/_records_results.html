@@ -37,7 +37,7 @@
       {% set submission_key = r.student_id ~ "|" ~ r.created_at %}
       <tr>
         <td><input type="checkbox" name="record_ids" value="{{ r.id }}" class="js-row-check"></td>
-        <td>{{ r.created_at }}</td>
+        <td>{{ r.created_at | kst_date }}</td>
         <td>{{ r.student_number }}</td>
         <td>{{ r.name }}</td>
         <td>{{ r.grade }}/{{ r.class_no }}</td>
