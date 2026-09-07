@@ -76,7 +76,7 @@
     var searchInput = document.getElementById("records-search-input");
     var tokenRow = document.querySelector(".admin-token-row");
 
-    confirmBtn.addEventListener("click", function () {
+    function verifyToken() {
       var token = tokenInput.value.trim();
       App.clearFormError(tokenRow);
       if (!token) {
@@ -111,6 +111,16 @@
           confirmBtn.classList.remove("is-loading");
           confirmBtn.textContent = "확인";
         });
+    }
+
+    confirmBtn.addEventListener("click", verifyToken);
+    // 토큰 입력 후 엔터를 눌러도 "확인" 버튼을 누른 것과 동일하게 동작한다.
+    // 이 입력칸은 records-delete-form 안에 있어서 그냥 두면 엔터가 폼 자체를
+    // 제출(삭제 액션)하려 들 수 있으므로 그 기본 동작은 막는다.
+    tokenInput.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      verifyToken();
     });
   })();
 
