@@ -22,6 +22,7 @@ from app.queries import (
     add_elective_course,
     delete_elective_course,
     get_all_elective_courses,
+    get_courses_by_ids,
     get_makeups_by_course,
     get_permit_submission,
     get_slots_by_course,
@@ -29,6 +30,7 @@ from app.queries import (
     get_student_permit_records,
     get_used_hours_by_course,
     group_courses_by_weekday,
+    search_courses,
     valid_class_dates,
 )
 from app.seed import seed as seed_dummy_data
@@ -178,6 +180,30 @@ def student_form(student_id):
     )
 
 
+@app.route("/student/<int:student_id>/courses/search")
+def student_extra_courses_search(student_id):
+    """"기존 시간표 외 다른 과목 선택" 검색창이 fetch로 호출하는 부분-페이지
+    엔드포인트: 재수강이나 다른 학년/분반 과목을 듣는 학생이 본인 학년
+    시간표에는 없는 과목도 이름으로 찾아 추가할 수 있게 한다 (전 학년/분반
+    대상, get_student_courses처럼 본인 학년으로 제한하지 않음)."""
+    conn = get_conn()
+    student = conn.execute(
+        "SELECT * FROM students WHERE id=%s AND term=%s", (student_id, TERM)
+    ).fetchone()
+    if student is None:
+        conn.close()
+        abort(404, "해당 학생을 찾을 수 없습니다.")
+    q = request.args.get("q", "").strip()
+    rows = search_courses(conn, q, TERM)
+    courses = get_courses_by_ids(conn, [r["id"] for r in rows], student_id)
+    conn.close()
+    # get_courses_by_ids returns a dict keyed by id; re-order to match
+    # search_courses' own course_name/grade/section ordering.
+    ordered = [courses[r["id"]] for r in rows]
+    return render_template("_extra_course_results.html", courses=ordered, q=q,
+                            max_absence_periods=MAX_ABSENCE_PERIODS_PER_COURSE)
+
+
 def _parse_period(form):
     start_raw = form.get("period_start", "").strip()
     end_raw = form.get("period_end", "").strip()
@@ -232,7 +258,10 @@ def review(student_id):
         conn.close()
         abort(400, f"결석 과목은 최대 {MAX_COURSES}개까지 선택할 수 있습니다.")
 
-    available = {c["id"]: c for c in get_student_courses(conn, student)}
+    # get_courses_by_ids (not get_student_courses) so a course_id from
+    # "기존 시간표 외 다른 과목 선택" (재수강 등, 다른 학년/분반 과목) still
+    # validates -- it isn't restricted to the student's own grade/section.
+    available = get_courses_by_ids(conn, course_ids, student["id"])
     slots_by_course = get_slots_by_course(conn, course_ids)
     makeups_by_course = get_makeups_by_course(conn, course_ids)
     conn.close()
@@ -291,8 +320,10 @@ def _load_selection_context(conn, student, student_id, course_ids):
     """Every piece of DB data needed to validate a course/date/교시
     selection, fetched in the same four bulk queries regardless of how
     many courses were selected. Shared by /confirm and /generate so both
-    validate against the exact same data."""
-    available = {c["id"]: c for c in get_student_courses(conn, student)}
+    validate against the exact same data. get_courses_by_ids (not
+    get_student_courses) so a "기존 시간표 외 다른 과목" course_id (다른
+    학년/분반) still validates here too."""
+    available = get_courses_by_ids(conn, course_ids, student_id)
     slots_by_course = get_slots_by_course(conn, course_ids)
     makeups_by_course = get_makeups_by_course(conn, course_ids)
     used_by_course = get_used_hours_by_course(conn, student_id, course_ids, TERM)

@@ -176,12 +176,87 @@ window.App = (function () {
     });
   }
 
+  // "기존 시간표 외 다른 과목 선택": 재수강이거나 본인 학년/분반 시간표에
+  //없는 과목을 검색해서 #extra-course-added 목록에 추가할 수 있게 한다.
+  // 검색 결과(#extra-course-results)는 검색할 때마다 통째로 갈아끼워지므로
+  // (다른 fetch 기반 검색들과 동일한 패턴), "추가"/"제거" 버튼은 각 결과/
+  // 추가 목록 컨테이너에 이벤트 위임으로 붙여서 새로 생기는 버튼도 항상
+  // 동작하게 한다.
+  function hydrateExtraCourseSearch(root) {
+    root.querySelectorAll("#extra-course-toggle").forEach(function (toggle) {
+      if (toggle.dataset.hydrated) return;
+      toggle.dataset.hydrated = "1";
+
+      var fieldset = toggle.closest("fieldset");
+      var panel = fieldset.querySelector("#extra-course-search");
+      var input = fieldset.querySelector("#extra-course-input");
+      var results = fieldset.querySelector("#extra-course-results");
+      var added = fieldset.querySelector("#extra-course-added");
+      var form = toggle.closest("form");
+      var studentId = toggle.dataset.studentId;
+      var timer = null;
+
+      toggle.addEventListener("click", function () {
+        panel.hidden = !panel.hidden;
+        if (!panel.hidden) input.focus();
+      });
+
+      function runSearch() {
+        var q = input.value.trim();
+        fetch("/student/" + studentId + "/courses/search?q=" + encodeURIComponent(q))
+          .then(function (res) { return res.text(); })
+          .then(function (html) { results.innerHTML = html; });
+      }
+
+      input.addEventListener("input", function () {
+        clearTimeout(timer);
+        timer = setTimeout(runSearch, 250);
+      });
+
+      results.addEventListener("click", function (e) {
+        var btn = e.target.closest(".js-extra-course-add");
+        if (!btn) return;
+        var row = btn.closest(".extra-course-row");
+        var id = row.dataset.courseId;
+        // Already selected -- either among the student's own normal
+        // checkboxes or already added here -- so skip it instead of
+        // submitting the same course_ids value twice (that would double
+        // its hours in the review/confirm 12시간 cap math).
+        if (form.querySelector('input[name="course_ids"][value="' + id + '"]')) return;
+
+        var item = document.createElement("div");
+        item.className = "extra-course-added-row";
+        item.dataset.courseId = id;
+        item.innerHTML =
+          '<input type="hidden" name="course_ids" value="' + id + '">' +
+          '<span class="option-body">' +
+          '<span class="option-title"></span>' +
+          '<span class="option-meta"></span>' +
+          '</span>' +
+          '<button type="button" class="btn ghost js-extra-course-remove">제거</button>';
+        item.querySelector(".option-title").textContent =
+          row.dataset.courseName + " — " + row.dataset.professor + " 교수";
+        item.querySelector(".option-meta").textContent =
+          row.dataset.grade + "학년 " + row.dataset.section + "반 · " +
+          row.dataset.classDay + " / " + row.dataset.classTime;
+        added.appendChild(item);
+      });
+
+      added.addEventListener("click", function (e) {
+        var btn = e.target.closest(".js-extra-course-remove");
+        if (!btn) return;
+        btn.closest(".extra-course-added-row").remove();
+      });
+    });
+  }
+
   function hydrateAll(root) {
     hydratePeriodSync(root);
     hydrateDateSync(root);
     hydrateSubmitGuard(root);
     hydrateAdminGate(root);
     hydrateAsciiOnly(root);
+    hydrateExtraCourseSearch(root);
     hydrateSelectAll(root);
     hydrateSortableTable(root);
     hydrateDialogs(root);

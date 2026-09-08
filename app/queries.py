@@ -230,10 +230,17 @@ def get_student_courses(conn, student, term=TERM):
            ORDER BY course_name""",
         (term, student["grade"], student["class_no"], elective_names),
     ).fetchall()
+    return _annotate_courses(conn, rows, student["id"], term)
 
+
+def _annotate_courses(conn, rows, student_id, term):
+    """Shared by get_student_courses (a student's own grade/section) and
+    get_courses_by_ids (an explicit id list, any grade/section -- 재수강 or
+    다른 과목 추가 신청): attaches this student's cumulative hours/한도 and
+    weekly schedule to each raw courses row."""
     course_ids = [c["id"] for c in rows]
     slots_by_course = get_slots_by_course(conn, course_ids)
-    used_by_course = get_used_hours_by_course(conn, student["id"], course_ids, term)
+    used_by_course = get_used_hours_by_course(conn, student_id, course_ids, term)
 
     courses = []
     for c in rows:
@@ -249,6 +256,8 @@ def get_student_courses(conn, student, term=TERM):
             "id": c["id"],
             "course_name": c["course_name"],
             "professor": c["professor"],
+            "grade": c["grade"],
+            "section": c["section"],
             "class_day": class_day,
             "class_time": class_time,
             "days": days,
@@ -257,6 +266,39 @@ def get_student_courses(conn, student, term=TERM):
             "at_limit": remaining <= 0,
         })
     return courses
+
+
+def get_courses_by_ids(conn, course_ids, student_id, term=TERM):
+    """Same per-course shape as get_student_courses, but for an explicit
+    list of course ids regardless of grade/section -- used to validate and
+    annotate a submission's course_ids, which may include the student's
+    own normal courses plus any "기존 시간표 외 다른 과목" they explicitly
+    searched for and added (재수강, or a course from another 학년/분반).
+    Returns {course_id: course_dict}."""
+    course_ids = list(course_ids)
+    if not course_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT * FROM courses WHERE term=%s AND id = ANY(%s)",
+        (term, course_ids),
+    ).fetchall()
+    return {c["id"]: c for c in _annotate_courses(conn, rows, student_id, term)}
+
+
+def search_courses(conn, q, term=TERM, limit=30):
+    """모든 학년/분반을 통틀어 과목명으로 검색 -- "기존 시간표 외 다른 과목
+    선택" 버튼이 쓰는 검색으로, get_student_courses처럼 학생 본인 학년/
+    분반으로 제한하지 않는다. 이름이 겹치는 과목(다른 학년/분반에 같은
+    이름으로 개설된 경우)을 구분할 수 있도록 grade/section도 함께
+    돌려준다."""
+    if not q:
+        return []
+    rows = conn.execute(
+        """SELECT * FROM courses WHERE term=%s AND course_name LIKE %s
+           ORDER BY course_name, grade, section LIMIT %s""",
+        (term, f"%{q}%", limit),
+    ).fetchall()
+    return rows
 
 
 def group_courses_by_weekday(courses):

@@ -1,0 +1,34 @@
+{# fetch()로 갈아끼워지는 검색 결과 목록 -- "추가" 버튼을 누르면 app.js의
+   hydrateExtraCourseSearch가 이 과목 정보를 읽어 #extra-course-added
+   목록에 새 항목(hidden course_ids input 포함)을 만들어 넣는다. 여기 자체는
+   아무 것도 선택하지 않는다 (검색어를 계속 입력하면 이 목록 전체가
+   갈아끼워지므로). #}
+{% if not q %}
+<p class="hint">과목명을 입력해 검색하세요 (본인 학년/분반이 아닌 과목도 모두 나옵니다).</p>
+{% elif not courses %}
+<p class="empty">검색 결과가 없습니다.</p>
+{% else %}
+<div class="extra-course-list">
+  {% for c in courses %}
+  <div class="extra-course-row"
+       data-course-id="{{ c.id }}"
+       data-course-name="{{ c.course_name }}"
+       data-professor="{{ c.professor }}"
+       data-grade="{{ c.grade }}"
+       data-section="{{ c.section }}"
+       data-class-day="{{ c.class_day }}"
+       data-class-time="{{ c.class_time }}"
+       data-used-hours="{{ c.used_hours }}"
+       data-remaining-hours="{{ c.remaining_hours }}">
+    <div class="extra-course-info">
+      <strong>{{ c.course_name }}</strong> — {{ c.professor }} 교수
+      <span class="hint">{{ c.grade }}학년 {{ c.section }}반 · {{ c.class_day }} / {{ c.class_time }}
+        {% if c.at_limit %}· <span class="badge">누적 {{ c.used_hours }}시간 — 한도 도달</span>
+        {% elif c.used_hours > 0 %}· <span class="badge ok">누적 {{ c.used_hours }}시간, {{ c.remaining_hours }}시간 남음</span>{% endif %}
+      </span>
+    </div>
+    <button type="button" class="btn js-extra-course-add" {% if c.at_limit %}disabled{% endif %}>추가</button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
